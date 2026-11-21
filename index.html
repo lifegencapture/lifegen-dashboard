@@ -1126,6 +1126,14 @@ const isOverdue = (v) => OPEN.includes(st(v)) && v.dueDate && daysUntil(v.dueDat
 function fileLinks(v) {
   const out = [];
   if (validUrl(v.finalLink)) out.push(el("a", { class: "vlink", href: v.finalLink, target: "_blank", rel: "noopener noreferrer", text: "Final ↗", onclick: (e) => e.stopPropagation() }));
+  // Lyric videos (and screen versions) keep their final files in the Final videos list.
+  const vers = (v.ratios || []).filter((r) => r.status !== "requested" && validUrl(r.link));
+  if (vers.length) {
+    const main = vers.find((r) => /main screen/i.test(r.ratio || "")) || vers[0];
+    if (!validUrl(v.finalLink)) out.push(el("a", { class: "vlink", href: main.link, target: "_blank", rel: "noopener noreferrer", text: "Final ↗", title: main.ratio || "Final video", onclick: (e) => e.stopPropagation() }));
+    const more = vers.length - (validUrl(v.finalLink) ? 0 : 1);
+    if (more > 0) out.push(el("span", { class: "small muted", text: `+${more} version${more === 1 ? "" : "s"}` }));
+  }
   if (validUrl(v.projectLink)) out.push(el("a", { class: "vlink", href: v.projectLink, target: "_blank", rel: "noopener noreferrer", text: "Project ↗", onclick: (e) => e.stopPropagation() }));
   if (validUrl(v.reviewLink)) out.push(el("a", { class: "vlink", href: v.reviewLink, target: "_blank", rel: "noopener noreferrer", text: "Review ↗", onclick: (e) => e.stopPropagation() }));
   return out.length ? el("div", { class: "links" }, out) : el("span", { class: "missing", text: "No files yet" });
