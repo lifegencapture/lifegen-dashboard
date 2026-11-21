@@ -281,7 +281,8 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 .dlg-head .xbtn { flex: none; font-size: 1.7rem; padding: 0 4px; }
 .dlg-head h2 { font-weight: 800; font-size: 1.3rem; letter-spacing: -0.01em; }
 .dlg-foot { border-top: 1px solid var(--line); }
-.dlg-body { padding: 18px 20px; overflow-y: auto; display: grid; gap: 22px; }
+.dlg-body { padding: 18px 20px; overflow-y: auto; display: grid; gap: 22px; grid-template-columns: minmax(0, 1fr); }
+.dlg-body > * { min-width: 0; }
 fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 12px; min-width: 0; }
 legend { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; padding: 0; margin-bottom: 12px; }
 .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -308,7 +309,8 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
 .fb .txt { white-space: pre-wrap; overflow-wrap: anywhere; }
 .reviewbox { display: grid; gap: 10px; border: 1.5px solid var(--review); border-radius: 12px; padding: 14px; background: var(--review-soft); }
 /* Cut player (review) */
-.cut { display: grid; gap: 12px; border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+.cut { display: grid; gap: 12px; border: 1px solid var(--line); border-radius: 14px; padding: 16px; grid-template-columns: minmax(0, 1fr); }
+.cut > * { min-width: 0; }
 .vtag { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; border: 1px solid var(--line); background: var(--panel); border-radius: 7px; padding: 5px 10px; }
 .stagewrap { display: grid; place-items: center; }
 .stage { position: relative; background: #000; border-radius: 10px; overflow: hidden; max-width: 100%; }
@@ -367,7 +369,8 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
 .cklist .ckname { flex: 1 1 160px; }
 .ckact { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .ckinput { width: 190px; padding: 6px 10px; font-size: 0.85rem; }
-.cklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.cklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); }
+.ckbox { min-width: 0; }
 .cklist li { display: flex; gap: 8px; align-items: center; font-size: 0.9rem; }
 .cklist li .ck { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 0.7rem; font-weight: 800; flex: none; }
 .cklist li.ok .ck { background: var(--ok); color: #fff; }
@@ -397,6 +400,8 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
 .cm.done { opacity: 0.55; }
 .cm.done .txt { text-decoration: line-through; }
 .cm .txt { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cmby { display: flex; align-items: center; gap: 0; margin-bottom: 4px; }
+.cmby .mini { width: 22px; height: 22px; font-size: 0.62rem; }
 .cm .who { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
 .tc { font: 600 0.78rem ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; background: var(--ink); color: var(--bg); border: 0; border-radius: 6px; padding: 4px 8px; cursor: pointer; white-space: nowrap; }
 .tc.none { background: var(--panel); color: var(--muted); cursor: default; font-family: var(--font-body); box-shadow: inset 0 0 0 1px var(--line); }
@@ -2359,8 +2364,9 @@ function renderFeedback() {
   $("cm-list").replaceChildren(...(notes.length ? notes.map((n) => el("div", { class: "cm" + (n.resolved ? " done" : "") }, [
     n.t != null ? el("button", { class: "tc", type: "button", text: fmtTCd(n.t), title: "Jump to this moment", onclick: () => seek(n.t, n) }) : el("span", { class: "tc none", text: "General" }),
     el("div", {}, [
+      el("div", { class: "cmby" }, [miniAvatar(n.by || "Media head"), el("span", { class: "strong small", text: n.by || "Media head" })]),
       el("div", { class: "txt", text: n.text }),
-      el("div", { class: "who", text: [n.by || "Media head", fmtDate(n.at), (n.v || 1) !== cv ? `on v${n.v || 1}` : "", n.pin || (n.draw && n.draw.length) ? "has marks on the frame" : ""].filter(Boolean).join(" · ") }),
+      el("div", { class: "who", text: [fmtDate(n.at), (n.v || 1) !== cv ? `on v${n.v || 1}` : "", n.pin || (n.draw && n.draw.length) ? "has marks on the frame" : ""].filter(Boolean).join(" · ") }),
     ]),
     canResolve
       ? el("label", { class: "fix" }, [(() => { const cb = el("input", { type: "checkbox" }); cb.checked = !!n.resolved; cb.onchange = () => toggleResolved(n._i, cb.checked); return cb; })(), "Fixed"])
@@ -3482,6 +3488,11 @@ $("avatar").onclick = () => (myName() ? openProfile() : openWelcome());
 
 /* profile: photo and Telegram username, kept on the person's own members record */
 const pdlg = $("pdlg"); let pPhoto = "", pOldPhoto = "";
+function miniAvatar(name) {
+  const ph = photoOf(name), a = el("span", { class: "mini" + (ph ? " photo" : ""), text: String(name || "?").trim().charAt(0).toUpperCase(), "aria-hidden": "true" });
+  if (ph) a.style.backgroundImage = `url(${blobUrl(ph)})`;
+  return a;
+}
 const memberOf = (name) => Object.values(members).find((m) => key(m.name) === key(name));
 const photoOf = (name) => { const m = memberOf(name); return m && m.photo ? m.photo : ""; };
 // Telegram username: the one in Team › Manage team, else the one the person saved in their profile.
