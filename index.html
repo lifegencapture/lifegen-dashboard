@@ -195,7 +195,9 @@ nav.main a[aria-current="page"]::before { content: ""; width: 5px; height: 5px; 
 .vtile:hover { border-color: var(--ink); }
 .vtile b { font-family: var(--font-display); font-size: 1.05rem; }
 .vtile span { color: var(--muted); font-size: 0.85rem; line-height: 1.4; }
-.vsearch { font-size: 1.05rem; padding: 14px 16px; width: 100%; }
+.vsearch { font-size: 1.05rem; padding: 14px 16px 14px 48px; width: 100%; background-position: 16px 50%; background-size: 20px; }
+input[type=search].vsearch, #l-q, #c-q { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a8a8a' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-4-4'/%3E%3C/svg%3E"); background-repeat: no-repeat; }
+#l-q, #c-q { padding-left: 38px; background-position: 12px 50%; background-size: 17px; }
 .vres { display: grid; gap: 6px; }
 .vres button { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; color: var(--ink); cursor: pointer; font: inherit; }
 .vres button:hover { border-color: var(--ink); }
@@ -505,7 +507,7 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
       <div class="filters" style="justify-content:space-between; margin-bottom:12px">
         <div class="az" id="az" aria-label="Jump to letter"></div>
         <div class="filters">
-          <input type="search" id="l-q" placeholder="Search songs, editors, colours, fonts" aria-label="Search lyric videos">
+          <input type="search" id="l-q" placeholder="Search songs, editors, colours…" aria-label="Search lyric videos">
           <select id="l-type" aria-label="Filter by song type"></select>
           <select id="l-editor" aria-label="Filter by editor"></select>
           <select id="l-status" aria-label="Filter by status"></select>
@@ -526,7 +528,7 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
       <div class="headactions"><button class="btn line qe-btn" type="button" aria-pressed="false" hidden>Quick edit</button><button class="btn line" type="button" id="c-archive" hidden>+ Add finished video</button><button class="btn" type="button" id="c-new" hidden>+ New brief</button></div>
     </div>
     <div class="filters">
-      <input type="search" id="c-q" placeholder="Search titles, editors, events" aria-label="Search">
+      <input type="search" id="c-q" placeholder="Search, e.g. power kl 2026" aria-label="Search">
       <select id="c-year" aria-label="Filter by year"></select>
       <select id="c-event" aria-label="Filter by event"></select>
       <select id="c-kind" aria-label="Filter by kind"></select>
@@ -1360,10 +1362,24 @@ const isRecentApproval = (v) => st(v) === "Approved" && v.source !== "sheet-impo
 const thisMonth = (iso) => String(iso || "").slice(0, 7) === todayISO().slice(0, 7);
 
 let vQuery = "";
+// Keyword search: every word typed must appear somewhere, in any order ("power kl 2026" finds "Power Conference KL … 2026").
+const SEARCH_ALIASES = { pc: "power conference", pf: "power festival", tg: "tribal gathering", xmas: "christmas", ot: "overture", opening: "opening", bg: "background" };
+const searchWords = (q) => String(q || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean);
+function searchHay(v) {
+  return [videoTitle(v), v.title, v.event, v.year, v.night, purposeLabel(v.purpose), CAT[v.category]?.label, CAT[v.category]?.plural, v.category === "lyric" ? lyricKind(v) : "", v.subtype, v.channel, v.platform, editorsText(v), v.colours, v.font]
+    .filter(Boolean).join(" ").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ");
+}
+function matchesSearch(v, q) {
+  const words = searchWords(q); if (!words.length) return true;
+  const hay = " " + searchHay(v) + " ";
+  const tokens = new Set(hay.split(/\s+/));
+  // Short numbers ("2" for Night 2) match whole numbers only, so they don't match "2026".
+  return words.every((w) => (/^\d{1,3}$/.test(w) ? tokens.has(w) : hay.includes(w)) || (SEARCH_ALIASES[w] && hay.includes(SEARCH_ALIASES[w])));
+}
 function viewerResults() {
   const q = vQuery.trim().toLowerCase();
   if (!q) return [];
-  return videos.filter((v) => `${videoTitle(v)} ${v.event || ""} ${v.year || ""} ${CAT[v.category]?.label || ""}`.toLowerCase().includes(q))
+  return videos.filter((v) => matchesSearch(v, q))
     .sort((a, b) => sortTitle(videoTitle(a)).localeCompare(sortTitle(videoTitle(b)))).slice(0, 25);
 }
 function renderViewerResults() {
@@ -1378,7 +1394,7 @@ function renderViewerHome() {
   $("weeklabel").textContent = "LifeGen video library";
   $("hello").textContent = "Hello there! 👋";
   $("stats").replaceChildren();
-  const search = el("input", { class: "vsearch", id: "v-search", type: "search", placeholder: "Search for a song, event or video…", "aria-label": "Search for a song, event or video", value: vQuery });
+  const search = el("input", { class: "vsearch", id: "v-search", type: "search", placeholder: "Search, e.g. power kl 2026 or joy to the world", "aria-label": "Search for a song, event or video", value: vQuery });
   search.addEventListener("input", () => { vQuery = search.value; renderViewerResults(); });
   const info = (title, lines) => el("div", { class: "panel stack" }, [el("div", { class: "label", text: title }), el("ul", { style: "margin:0; padding-left:18px; line-height:1.6" }, lines.map(([b, r]) => el("li", {}, [el("b", { text: b }), " " + r])))]);
   fillKids($("sections"),
@@ -1503,7 +1519,7 @@ function renderLyrics(admin) {
   const rows = lyrics.filter((v) =>
     (!F.lType || (F.lType === "none" ? !v.songType : v.songType === F.lType)) &&
     (!F.lEditor || editorsOf(v).some((n) => key(n) === F.lEditor)) && (!F.lStatus || st(v) === F.lStatus) &&
-    (!F.lQ || `${v.title} ${editorsText(v)} ${v.colours || ""} ${v.font || ""}`.toLowerCase().includes(F.lQ))
+    (!F.lQ || matchesSearch(v, F.lQ))
   ).sort((a, b) => sortTitle(a.title).localeCompare(sortTitle(b.title)));
   const letterOf = (v) => (sortTitle(v.title)[0] || "#").replace(/[0-9]/, "#");
   const letters = new Set(rows.map(letterOf));
@@ -1547,7 +1563,7 @@ function renderCat(admin) {
   const kindOf = (v) => (cat === "other" ? v.platform : purposeLabel(v.purpose));
   const rows = list.filter((v) =>
     (!F.cYear || String(v.year) === F.cYear) && (!F.cEvent || (cat === "other" ? v.channel : v.event) === F.cEvent) && (!F.cKind || kindOf(v) === F.cKind) &&
-    (!F.cQ || `${videoTitle(v)} ${editorsText(v)} ${v.event || ""}`.toLowerCase().includes(F.cQ)));
+    (!F.cQ || matchesSearch(v, F.cQ)));
   const groups = new Map();
   for (const v of rows) { const y = String(v.year || "No year"); if (!groups.has(y)) groups.set(y, []); groups.get(y).push(v); }
   const yKeys = [...groups.keys()].sort((a, b) => (a === "No year") - (b === "No year") || b.localeCompare(a));
