@@ -1,0 +1,23 @@
+rules_version = '2';
+
+// LifeGen Video Dashboard: uploaded files (review copies, screenshots, fonts, photos).
+// Paste into Firebase console › Storage › Rules, replace PASTE_OWNER_EMAIL with the
+// owner's Google email (lowercase), and Publish. Firebase asks to let Storage read
+// Firestore (for the "who can sign in" list): allow it.
+// In the dashboard, files open through private download links that carry a
+// secret token, so <img> and <video> tags work without signing in again.
+service firebase.storage {
+  match /b/{bucket}/o {
+    function onList() {
+      return request.auth != null && (
+        request.auth.token.email.lower() == "PASTE_OWNER_EMAIL" ||
+        request.auth.token.email.lower() in firestore.get(/databases/(default)/documents/access/list).data.emails);
+    }
+    match /assets/{name} {
+      allow read: if onList();
+      // Uploads are capped at 210 MB (review copies are kept under 200 MB).
+      allow create: if onList() && request.resource.size < 210 * 1024 * 1024;
+      allow delete: if onList();
+    }
+  }
+}

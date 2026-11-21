@@ -1,0 +1,8 @@
+# Never publish data exports or local notes
+*export*.json
+private/
+.DS_Store
+node_modules/
+functions/.env*
+.firebase/
+*.log

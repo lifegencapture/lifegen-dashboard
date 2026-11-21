@@ -1,0 +1,59 @@
+rules_version = '2';
+
+// LifeGen Video Dashboard: who can read and change what.
+// Paste this into Firebase console › Firestore Database › Rules, replace
+// PASTE_OWNER_EMAIL with the owner's Google email (lowercase), and Publish.
+// Keep the real email out of this public file: only edit it in the console.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function email() { return request.auth.token.email.lower(); }
+    function signedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+    function isOwner() { return signedIn() && email() == "PASTE_OWNER_EMAIL"; }
+    function access() { return get(/databases/$(database)/documents/access/list).data.emails; }
+    function role() { return exists(/databases/$(database)/documents/access/list) && email() in access() ? access()[email()] : ""; }
+    function isAdmin() { return isOwner() || role() == "admin"; }
+    function isEditor() { return isAdmin() || role() == "editor"; }
+    function isMember() { return isEditor() || role() == "viewer"; }
+
+    // Who can sign in. Each person may read the list only if they're on it.
+    match /access/list {
+      allow read: if isMember();
+      allow write: if isAdmin();
+    }
+
+    // Team, Drive folders, screen and venue lists.
+    match /settings/{doc} {
+      allow read: if isMember();
+      allow write: if isAdmin();
+    }
+
+    // The SOP and brand files.
+    match /content/{doc} {
+      allow read: if isMember();
+      allow write: if isAdmin();
+    }
+
+    // Videos: editors hand in drafts, files and final links; admins do everything.
+    match /videos/{id} {
+      allow read: if isMember();
+      allow create, update: if isEditor();
+      allow delete: if isAdmin();
+    }
+
+    // Notifications for the bell and Telegram.
+    match /notify/{id} {
+      allow read: if isMember();
+      allow create, update: if isEditor();
+      allow delete: if isAdmin();
+    }
+
+    // Each person's name, photo and Telegram username. Only they can set theirs;
+    // only the owner can reset someone (delete their record).
+    match /members/{uid} {
+      allow read: if isMember();
+      allow create, update: if isEditor() && request.auth.uid == uid;
+      allow delete: if isOwner();
+    }
+  }
+}
