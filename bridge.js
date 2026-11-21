@@ -65,10 +65,13 @@
   };
   const rand = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
   const assets = {
-    async upload(file) {
+    async upload(file, onProgress) {
       const name = rand();
       const ref = storage.ref("assets/" + name);
-      await ref.put(file, { contentType: file.type || "application/octet-stream", customMetadata: { originalName: file.name || "" } });
+      // Resumable upload: big files go up in pieces and survive brief connection drops.
+      const task = ref.put(file, { contentType: file.type || "application/octet-stream", customMetadata: { originalName: file.name || "" } });
+      if (onProgress) task.on("state_changed", (s) => onProgress(Math.floor((s.bytesTransferred / Math.max(1, s.totalBytes)) * 100)));
+      await task;
       const url = await ref.getDownloadURL();
       const token = new URL(url).searchParams.get("token") || "";
       return { id: `${name}~${token}`, contentType: file.type || "", sizeBytes: file.size || 0 };

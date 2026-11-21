@@ -15,8 +15,8 @@ service firebase.storage {
     }
     match /assets/{name} {
       allow read: if onList();
-      // Uploads are capped at 210 MB (review copies are kept under 200 MB).
-      allow create: if onList() && request.resource.size < 210 * 1024 * 1024;
+      // Uploads are capped at about 1 GB (draft review copies upload straight, no shrinking).
+      allow create: if onList() && request.resource.size < 1100 * 1024 * 1024;
       allow delete: if onList();
     }
   }

@@ -708,7 +708,7 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
           <div class="okbar" id="cut-meta" hidden></div>
           <button class="btn wide" type="button" id="cut-upload">Upload v1</button>
           <input id="cut-file" type="file" accept="video/*" hidden>
-          <p class="hint center" id="cut-hint">Upload your cut. Files over 200 MB are shrunk into a review copy for you. The full-quality file still goes to Google Drive.</p>
+          <p class="hint center" id="cut-hint">Upload your cut (MP4 under 1 GB). The full-quality file goes to Google Drive after approval.</p>
         </div>
       </section>
 
@@ -730,7 +730,7 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
           <span class="err" id="pp-err"></span>
         </div>
         <div class="field" style="margin-top:6px">
-          <span class="lbl" id="dup-lbl">Font file <small>(.ttf or .otf, up to 200 MB)</small></span>
+          <span class="lbl" id="dup-lbl">Font file <small>(.ttf or .otf)</small></span>
           <div class="files" id="f-dfiles"></div>
           <div id="dup-wrap"><label class="btn sm quiet" for="f-dupload" style="cursor:pointer" id="dup-btn">Upload font file</label>
           <input id="f-dupload" type="file" multiple hidden accept="video/*,image/*,application/pdf,.ttf,.otf,.woff,.woff2"></div>
@@ -811,7 +811,7 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
         <div class="field"><label for="f-ref">Reference link <small>(footage folder, song audio, mood board)</small></label>
           <input id="f-ref" type="url" inputmode="url" placeholder="https://"></div>
         <div class="field" id="bfiles-field" hidden>
-          <span class="lbl">Brief files <small>(up to 200 MB each)</small></span>
+          <span class="lbl">Brief files <small>(up to 1 GB each)</small></span>
           <div class="files" id="f-bfiles"></div>
           <div id="bup-wrap"><label class="btn sm quiet" for="f-bupload" style="cursor:pointer">Attach files</label>
           <input id="f-bupload" type="file" multiple hidden></div>
@@ -989,7 +989,7 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
 <script src="bridge.js"></script>
 <script>
 /* ================= constants ================= */
-const UPLOAD_MAX = 200 * 1024 * 1024;   // Firebase Storage: files up to 200 MB (a sharp 1080p review copy)
+const UPLOAD_MAX = 1024 * 1024 * 1024;   // Firebase Storage: drafts up to 1 GB upload straight away, no shrinking
 const CATS = [
   { id: "lyric", label: "Lyric video", view: "lyrics" },
   { id: "recap", label: "Event video", view: "recaps", plural: "Event videos" },
@@ -2077,7 +2077,7 @@ $("brand-upload").addEventListener("change", async (e) => {
   const list = [...e.target.files]; e.target.value = ""; $("brand-err").textContent = "";
   const files = Array.isArray(brand.files) ? [...brand.files] : [];
   for (const file of list) {
-    if (file.size > UPLOAD_MAX) { $("brand-err").textContent = `${file.name} is over 200 MB. Put it in the Drive folder instead.`; continue; }
+    if (file.size > UPLOAD_MAX) { $("brand-err").textContent = `${file.name} is over 1 GB. Put it in the Drive folder instead.`; continue; }
     try { const r = await assets.upload(file); files.push({ id: r.id, name: file.name, contentType: r.contentType, size: r.sizeBytes }); }
     catch { $("brand-err").textContent = `Couldn't upload ${file.name}. Images, PDFs, fonts and text files work.`; }
   }
@@ -2462,7 +2462,7 @@ $("pp-file").addEventListener("change", async (e) => {
   const next = [...slidesOf()];
   for (const f of files) {
     if (!/^image\//.test(f.type)) { $("pp-err").textContent = `${f.name} isn't an image. Use a PNG or JPG screenshot.`; continue; }
-    if (f.size > UPLOAD_MAX) { $("pp-err").textContent = `${f.name} is over 200 MB.`; continue; }
+    if (f.size > UPLOAD_MAX) { $("pp-err").textContent = `${f.name} is over 1 GB.`; continue; }
     try { const r = await assets.upload(f); next.push({ id: r.id, name: f.name, contentType: r.contentType || f.type, label: guessSection(f.name) }); }
     catch { $("pp-err").textContent = `Couldn't upload ${f.name}. Try again.`; }
   }
@@ -2518,7 +2518,7 @@ function renderCutUpload() {
   } else {
     // The export rule always shows, before every upload.
     $("cut-hint").replaceChildren(...[
-      el("span", { class: "rule" }, [el("b", { text: "Export a review copy: " }), "H.264 MP4, 1920×1080, bitrate VBR 1-pass, target 5 Mbps, audio AAC 128 kbps. That keeps a 5-minute video under 200 MB, so it uploads straight away."]),
+      el("span", { class: "rule" }, [el("b", { text: "Export a review copy: " }), "H.264 MP4 at 1080p (about 5 Mbps), under 1 GB. It uploads straight away."]),
       c ? el("span", { text: ` v${c.v + 1} replaces v${c.v}.` }) : null,
     ].filter(Boolean));
   }
@@ -2527,12 +2527,12 @@ $("cut-upload").onclick = () => $("cut-file").click();
 $("cut-file").addEventListener("change", async (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) await prepareCompress(f); });
 async function uploadCut(file, meta = {}) {
   const prev = currentCut(), v = prev ? prev.v + 1 : 1;
-  $("cut-upload").disabled = true; $("cut-hint").textContent = `Uploading v${v}…`;
+  $("cut-upload").disabled = true; $("cut-hint").textContent = `Uploading v${v}… 0%`;
   let r;
-  try { r = await assets.upload(file); }
+  try { r = await assets.upload(file, (pct) => { $("cut-hint").textContent = `Uploading v${v}… ${pct}%${file.size > 100 * 1048576 ? " · keep this tab open" : ""}`; }); }
   catch (ex) {
     const code = ex && (ex.code || ex.name);
-    $("cut-hint").textContent = `Couldn't upload v${v}${code ? " (" + code + ")" : ""}. Try again, or check the file is under 200 MB.`;
+    $("cut-hint").textContent = `Couldn't upload v${v}${code ? " (" + code + ")" : ""}. Check your internet and try again.`;
     renderCutUpload(); return false;
   }
   const cut = { id: r.id, name: file.name, contentType: r.contentType || file.type || "", size: r.sizeBytes || file.size, w: meta.w || 0, h: meta.h || 0, v, uploadedAt: new Date().toISOString(), by: myName() || "" };
@@ -2616,8 +2616,8 @@ $("f-compress").addEventListener("change", async (e) => {
 async function prepareCompress(file) {
   $("cmp-err").textContent = ""; $("f-upload-err").textContent = "";
   if (file.size > 1024 * 1024 * 1024) {
-    $("cut-hint").textContent = `${file.name} is ${fmtMB(file.size)}. Exports must be under 1 GB: re-export at a lower bitrate and upload again.`;
-    toast("That file is over 1 GB. Please export under 1 GB."); return;
+    $("cut-hint").textContent = `${file.name} is ${fmtMB(file.size)}, over the 1 GB limit. Export again at 1080p, about 5 Mbps, and upload that.`;
+    return;
   }
   if (file.size <= UPLOAD_MAX) {
     let meta = {}; try { meta = await probeDuration(file); } catch {}
@@ -3032,7 +3032,7 @@ async function uploadInto(input, arr, rerender) {
       ok = false;
       // A big video picked with "Upload files" goes to the review-copy maker instead of being refused.
       if (arr === dFiles && /^video\//.test(file.type) && canUploadCut() && !cmpBusy) { await prepareCompress(file); continue; }
-      $("f-upload-err").textContent = `${file.name} is over 200 MB. Upload it to the Drive folder and paste the link instead.`; continue;
+      $("f-upload-err").textContent = `${file.name} is over 1 GB. Upload it to the Drive folder and paste the link instead.`; continue;
     }
     const tmp = { id: "", name: `${file.name} (uploading…)` }; arr.push(tmp); rerender();
     const ext = (file.name.split(".").pop() || "").toLowerCase();
@@ -3045,7 +3045,7 @@ async function uploadInto(input, arr, rerender) {
       const code = ex && (ex.code || ex.name), msg = ex && ex.message ? ` (${ex.message})` : "";
       $("f-upload-err").textContent = code === "not_granted" || code === "not_writer"
         ? `Couldn't upload ${file.name}: your access level doesn't allow file uploads. Ask Maxine to give you Editor access.`
-        : `Couldn't upload ${file.name}. Try an MP4, image or PDF under 200 MB.${code ? " Error: " + code : ""}${msg}`;
+        : `Couldn't upload ${file.name}. Try an MP4, image or PDF under 1 GB.${code ? " Error: " + code : ""}${msg}`;
     }
     rerender();
   }
