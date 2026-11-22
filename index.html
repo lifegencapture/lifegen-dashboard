@@ -1335,8 +1335,11 @@ function nasPath(v) {
   const y = v.year || new Date().getFullYear();
   if (v.category === "lyric") return `ChurchPlantShare › ChurchPlant-LifeGen › Lifegen_Media › VIDEOGRAPHY & EDITING › ${y} › LYRIC VIDEOS ${y} › folder “${norm(v.title).toUpperCase() || "SONG NAME"}”`;
   const name = (v.event && v.event !== "Other" ? v.event : videoTitle(v)).toUpperCase().replace(/^POWER CONFERENCE/, "POWER CONF");
-  return `ChurchPlantShare › ChurchPlant-LifeGen › Lifegen_Media › VIDEOGRAPHY & EDITING › ${y} › new folder “NN_${name}”`;
+  // Year folders hold numbered event folders (01_, 02_, 03_…): use the existing one, or make the next number.
+  return `ChurchPlantShare › ChurchPlant-LifeGen › Lifegen_Media › VIDEOGRAPHY & EDITING › ${y} › the ${name} folder (numbered like the others, e.g. 07_${name}; make it with the next number if it isn't there)`;
 }
+// Social videos only go to Google Drive. YouTube videos also get their project files backed up to the server.
+const needsNas = (v) => !(v.category === "other" && v.platform !== "YouTube");
 const needsHdd = (v) => v.category === "recap" && BIG_EVENTS.includes(v.event);   // event videos (recaps, promos, teasers) for big events only
 // Lyric videos live on the server (NAS) only. Everything else: the final video goes to Google Drive.
 const hasFinalVersion = (v) => (v.ratios || []).some((r) => r.status !== "requested" && validUrl(r.link));
@@ -1344,6 +1347,7 @@ const finalDone = (v) => (v.category === "lyric" ? !!v.nasBackup && hasFinalVers
 function finalStepText(v) {
   return v.category === "lyric"
     ? `upload the final video (and any other screen versions) to ${driveFolder(v)} and add each one under Final videos. Then back up the project files and all assets (backgrounds${needsLook(v) ? ", font file" : ""}, exports) to the church server (NAS) › ${nasPath(v)} and tick the server backup box`
+    : !needsNas(v) ? `upload the final video to ${driveFolder(v)}`
     : `upload the final video to ${driveFolder(v)} and paste the link on the dashboard. Then back up the project files & assets to the church server (NAS)${needsHdd(v) ? " and the event HDD (ask Desmond, Jon or Maxine which one)" : ""} and tick it off`;
 }
 /* What each finished video still needs (the catch-up checklist). */
@@ -1355,7 +1359,7 @@ const isFontFile = (f) => !!f && !!f.id && (/font/.test(f.contentType || "") || 
 function checklist(v) {
   // [label, done, key]
   const items = [["Final video in Google Drive", v.category === "lyric" ? hasFinalVersion(v) : validUrl(v.finalLink), "final"]];
-  items.push(["Project files backed up to the server", !!v.nasBackup, "nas"]);
+  if (needsNas(v)) items.push(["Project files backed up to the server", !!v.nasBackup, "nas"]);
   if (needsHdd(v)) items.push(["Backed up to the event HDD", !!v.hddBackup, "hdd"]);
   if (v.category === "lyric") {
     items.push(["Colours", !!norm(v.colours), "colours"]);
@@ -2124,6 +2128,7 @@ function syncCatFields() {
   $("f-title").placeholder = cat === "lyric" ? "e.g. Lion of Judah" : NIGHT_CATS.includes(cat) ? "Leave blank to name it from the event" : cat === "recap" ? "e.g. Easter 2026 Recap" : cat === "presentation" ? "e.g. Christmas Musical Background" : "e.g. Sermon bite: Faith over fear";
   $("hdd-wrap").hidden = !(cat === "recap" && BIG_EVENTS.includes($("f-event").value));
   $("nas-hint").textContent = `Server: ${nasPath({ category: cat, event: EVENT_CATS.includes(cat) ? $("f-event").value : "", title: $("f-title").value, year: Number($("f-year").value) || null, songType: $("f-songtype").value })}. How to log in is in the SOP.`;
+  $("bk-wrap").hidden = !needsNas({ category: cat, platform: $("f-platform").value });
   const worship = cat === "lyric" && ($("f-songtype").value === "Worship" || $("f-format").value === "background");
   $("fmt-wrap").hidden = cat !== "lyric" || $("f-songtype").value !== "Praise";
   $("final-wrap").hidden = cat === "lyric";                                  // lyric videos: server (NAS) only, no Drive links
@@ -2133,6 +2138,7 @@ function syncCatFields() {
   $("f-font").closest(".field").hidden = !worship;   // praise songs only need colours
 }
 $("f-songtype").addEventListener("change", syncCatFields);
+$("f-platform").addEventListener("change", syncCatFields);
 $("f-format").addEventListener("change", syncCatFields);
 $("f-cat").addEventListener("change", syncCatFields);
 $("f-event").addEventListener("change", syncCatFields);
