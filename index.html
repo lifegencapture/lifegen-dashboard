@@ -1432,15 +1432,14 @@ function renderFilesAlert(left, ratioReqs = []) {
   const backupsOnly = left.length - needVideo;
   const fd = left.length ? left.map(filesDue).sort()[0] : "", bd = left.length ? left.map(backupDue).sort()[0] : "";
   const late = fd && needVideo && Date.parse(fd) < Date.now();
-  const parts = [];
-  if (needVideo) parts.push(`${needVideo} still need${needVideo === 1 ? "s" : ""} the final video on Google Drive${fd ? ` (due ${fmtDate(fd)})` : ""}`);
-  if (backupsOnly) parts.push(`${backupsOnly} just need${backupsOnly === 1 ? "s" : ""} the project files backed up to the server${bd ? ` (due ${fmtDate(bd)})` : ""}`);
-  if (nVers) parts.push(`${nVers} ${nVers === 1 ? "has" : "have"} a screen version requested`);
+  const when = (d) => (d ? new Date(d).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }) : "");
+  const head = needVideo
+    ? `⚠ Your priority: upload ${plural(needVideo, "final video")} to Google Drive by ${when(fd)}${late ? " (overdue)" : ""}.`
+    : left.length ? `⚠ Your priority: back up ${plural(backupsOnly, "project folder")} to the church server by ${when(bd)}.`
+    : `⚠ Your priority: ${plural(nVers, "video")} need${nVers === 1 ? "s" : ""} a screen version uploaded.`;
+  const sub = [needVideo ? `Then back up the project folders to the server by ${when(bd)}.` : "", nVers && left.length ? `${plural(nVers, "video")} also need${nVers === 1 ? "s" : ""} a screen version.` : "", "Open each one and click Upload to Drive."].filter(Boolean).join(" ");
   box.replaceChildren(
-    el("div", { style: "min-width:0; flex:1 1 280px" }, [
-      el("div", { class: "big", text: `⚠ You have ${plural(left.length || nVers, "video")} to hand in${late ? ". Some are overdue" : ""}` }),
-      el("div", { class: "sub", text: parts.join(" · ") + ". Open each one and click Upload to Drive: it goes straight into the right folder." }),
-    ]),
+    el("div", { style: "min-width:0; flex:1 1 280px" }, [el("div", { class: "big", text: head }), el("div", { class: "sub", text: sub })]),
     el("button", { class: "btn sm", type: "button", text: "Show my list", onclick: () => { const t = $("sec-files") || $("c-ratios"); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); } }),
   );
   box.hidden = false;
