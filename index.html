@@ -691,7 +691,7 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
         <div class="cutup" id="cutup">
           <div class="cmp" id="cmp-wrap">
             <div class="strong" id="cmp-title">Making your review copy</div>
-            <p class="hint" style="margin:0">Videos over 200 MB are shrunk into a review copy on your own computer (nothing is sent anywhere while it works), then uploaded here. It plays your video through once, so keep this tab open and on screen. Use Google Chrome.</p>
+            <p class="hint" style="margin:0">Videos over 1 GB are shrunk into a review copy on your own computer (nothing is sent anywhere while it works), then uploaded here. It plays your video through once, so keep this tab open and on screen. Use Google Chrome.</p>
             <div class="inline" style="flex-wrap:wrap">
               <span id="cmp-pick" hidden></span>
               <input id="f-compress" type="file" accept="video/*" hidden>
@@ -707,7 +707,7 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
             <span class="err" id="cmp-err"></span>
             <p class="hint" id="cmp-diag" hidden style="margin:0;font-family:ui-monospace,monospace;font-size:0.72rem;user-select:all"></p>
             <details class="hint" style="margin:0"><summary>Tip: export a review copy straight from your editing app</summary>
-              <p style="margin:6px 0 0">If this keeps failing, export a review copy from your editing app and upload that instead (it goes straight up, no shrinking): <b>H.264 MP4, 1920×1080, bitrate 5 Mbps (1-pass VBR), audio AAC 128 kbps.</b> That fits about 5 minutes in under 200 MB. For longer videos use 3 Mbps. The full-quality export still goes to Google Drive.</p>
+              <p style="margin:6px 0 0">If this keeps failing, export a review copy from your editing app and upload that instead (it goes straight up, no shrinking): <b>H.264 MP4, 1920×1080, bitrate 5 Mbps (1-pass VBR), audio AAC 128 kbps.</b> For long videos use 3 Mbps. The full-quality export still goes to Google Drive.</p>
             </details>
           </div>
           <div class="okbar" id="cut-meta" hidden></div>
@@ -841,7 +841,6 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
           <label class="tick" id="hdd-wrap"><input type="checkbox" id="f-hdd"><span>Also backed up to the event HDD (ask Desmond, Jon or Maxine which one)</span></label>
           <p class="hint" id="nas-hint" style="margin:0"></p>
         </div>
-        <div class="field"><label for="f-review">Review link <small>(optional: Frame.io, Dropbox Replay or Vimeo, for long videos)</small></label><input id="f-review" type="url" inputmode="url" placeholder="https://"></div>
         <p class="hint" id="drive-hint"></p>
         <div class="namebox" id="namebox"></div>
         <div class="grid2" data-for="lyric">
@@ -1145,7 +1144,6 @@ function fileLinks(v) {
     if (more > 0) out.push(el("span", { class: "small muted", text: `+${more} version${more === 1 ? "" : "s"}` }));
   }
   if (validUrl(v.projectLink)) out.push(el("a", { class: "vlink", href: v.projectLink, target: "_blank", rel: "noopener noreferrer", text: "Project ↗", onclick: (e) => e.stopPropagation() }));
-  if (validUrl(v.reviewLink)) out.push(el("a", { class: "vlink", href: v.reviewLink, target: "_blank", rel: "noopener noreferrer", text: "Review ↗", onclick: (e) => e.stopPropagation() }));
   return out.length ? el("div", { class: "links" }, out) : el("span", { class: "missing", text: "No files yet" });
 }
 
@@ -2518,10 +2516,10 @@ $("c-status").addEventListener("change", async (e) => {
   catch { toast("Couldn't change the status. Try again."); renderHeader(); }
 });
 function lnSummary() {
-  const n = ["f-final", "f-project", "f-review"].filter((id) => validUrl($(id).value.trim())).length;
+  const n = ["f-final", "f-project"].filter((id) => validUrl($(id).value.trim())).length;
   $("ln-sum").textContent = $("f-cat").value === "lyric" ? ($("f-nas").checked ? "Backed up to the server" : "Server backup, colours & font") : n ? `${n} link${n === 1 ? "" : "s"} added` : "Final link, backup & notes";
 }
-["f-final", "f-project", "f-review"].forEach((id) => $(id).addEventListener("input", lnSummary));
+["f-final", "f-project"].forEach((id) => $(id).addEventListener("input", lnSummary));
 
 /* versions: upload v1, v2, v3… each new version replaces the last */
 function canUploadCut() { return !!assets && canWrite && (mode === "log" || (editing && (isMine(editing) || editing.createdBy === uid))); }
@@ -2646,12 +2644,12 @@ async function prepareCompress(file) {
     await uploadCut(file, meta); return;
   }
   $("cmp-wrap").hidden = false;
-  if (!pickMime() || !HTMLCanvasElement.prototype.captureStream) { $("cmp-err").textContent = "This browser can't make review copies. Use Google Chrome on a computer, or export a small (under 200 MB) copy from your editing app."; return; }
+  if (!pickMime() || !HTMLCanvasElement.prototype.captureStream) { $("cmp-err").textContent = "This browser can't make review copies. Use Google Chrome on a computer, or export a smaller copy (1080p, about 5 Mbps) from your editing app."; return; }
   try {
     const { d, w, h } = await probeDuration(file);
     if (!isFinite(d) || d <= 0) throw new Error("unreadable");
     const p = plan(d, w, h);
-    if (p.raw < 300000) { $("cmp-err").textContent = `This video is ${fmtDur(d)} long, too long to fit in 200 MB at a watchable quality. Upload it to Frame.io or Dropbox Replay and paste the review link above.`; return; }
+    if (p.raw < 300000) { $("cmp-err").textContent = `This video is ${fmtDur(d)} long, too long to shrink here. Export a smaller copy (1080p, about 3 Mbps) from your editing app and upload that.`; return; }
     cmpFile = { file, d, w, h };
     $("cmp-info").textContent = `${file.name} · ${fmtMB(file.size)} · ${fmtDur(d)}`;
     $("cmp-text").textContent = `Makes a ${p.h > p.w ? p.w + "×" + p.h : p.w + "×" + p.h} copy, about ${fmtMB(Math.min(CMP_TARGET, (p.bps * d) / 8))}. Takes about ${fmtDur(d)} (it plays the video through once). Keep this tab open and on screen.`;
@@ -2754,7 +2752,7 @@ async function runCompress() {
         // This format won't get small enough here: try the next one, otherwise stop early with a clear message.
         if (cmpMimeIdx < mimes.length - 1) { cmpMimeIdx++; cmpAttempts = MAX_ATTEMPTS - 2; cmpQuality = 1; $("cmp-text").textContent = "Trying another format…"; $("cmp-bar").style.width = "0"; retryNext = true; return; }
         $("cmp-text").textContent = "";
-        $("cmp-err").textContent = `This computer couldn't get the copy under 200 MB (it was heading for about ${fmtMB(projected)}). Export a small review copy from your editing app instead (see the tip below), or paste a Frame.io or Dropbox Replay link above.`;
+        $("cmp-err").textContent = `This computer couldn't get the copy under 1 GB (it was heading for about ${fmtMB(projected)}). Export a smaller review copy from your editing app instead (see the tip below).`;
         $("cmp-start").hidden = false; $("cmp-start").textContent = "Try again";
         return;
       }
@@ -2779,11 +2777,11 @@ async function runCompress() {
     if (out.size > UPLOAD_MAX) {
       cmpQuality *= shrinkBy(out.size);
       if (cmpAttempts < MAX_ATTEMPTS) {
-        $("cmp-text").textContent = `The copy came out at ${fmtMB(out.size)}, over the 200 MB limit. Making a smaller one…`;
+        $("cmp-text").textContent = `The copy came out at ${fmtMB(out.size)}, over the 1 GB limit. Making a smaller one…`;
         $("cmp-bar").style.width = "0"; retryNext = true; return;
       }
       $("cmp-text").textContent = "";
-      $("cmp-err").textContent = `Even at the lowest setting the copy came out at ${fmtMB(out.size)}. Upload this video to Frame.io or Dropbox Replay and paste the review link above.`;
+      $("cmp-err").textContent = `Even at the lowest setting the copy came out at ${fmtMB(out.size)}. Export a smaller copy (1080p, about 3 Mbps) from your editing app and upload that.`;
       $("cmp-start").hidden = false; $("cmp-start").textContent = "Try again";
       return;
     }
@@ -3120,7 +3118,6 @@ function openDialog(m, v = null) {
   $("f-ref").value = d.refLink || "";
   $("f-final").value = d.finalLink || "";
   $("f-project").value = d.projectLink || "";
-  $("f-review").value = d.reviewLink || "";
   resetCompressor();
   pendingCut = null; pendingSlides = []; cmFilter = "current"; draft = { pin: null, draw: [] }; markMode = ""; shownNote = null;
   stage.classList.remove("marking"); $("qmenu").hidden = true; $("cm-pin").setAttribute("aria-pressed", "false"); $("cm-draw").setAttribute("aria-pressed", "false"); $("cm-clear").hidden = true;
@@ -3157,7 +3154,7 @@ function openDialog(m, v = null) {
   $("dup-wrap").hidden = !assets || !canEditDelivery;
   chipsLocked = !canEditBrief;
   for (const id of ["f-cat", "f-sub", "f-songtype", "f-format", "f-title", "f-event", "f-channel", "f-platform", "f-night", "f-purpose", "f-year", "f-due", "f-status", "f-brief", "f-ref"]) $(id).disabled = !canEditBrief;
-  for (const id of ["f-nas", "f-hdd", "f-final", "f-project", "f-review", "f-colours", "f-colour-pick", "f-colourful", "f-font", "f-remarks"]) $(id).disabled = !canEditDelivery;
+  for (const id of ["f-nas", "f-hdd", "f-final", "f-project", "f-colours", "f-colour-pick", "f-colourful", "f-font", "f-remarks"]) $(id).disabled = !canEditDelivery;
   // Colours and font are usually filled in by the editor; admins can fill them in on the editor's behalf.
   $("f-colours").placeholder = "e.g. Pink, black, white";
   $("f-font").placeholder = "e.g. Montserrat ExtraBold";
@@ -3249,7 +3246,7 @@ function collect() {
     briefFiles: bFiles.filter((f) => f.id).map(({ id, name, contentType, size }) => ({ id, name, contentType: contentType || "", size: size || 0 })),
   });
   if (canEditDelivery || mode !== "edit") Object.assign(out, {
-    finalLink: $("f-final").value.trim(), projectLink: $("f-project").value.trim(), reviewLink: $("f-review").value.trim(),
+    finalLink: $("f-final").value.trim(), projectLink: $("f-project").value.trim(),
     nasBackup: $("f-nas").checked, hddBackup: $("f-hdd").checked,
     colours: cat === "lyric" || (editing && editing.category === "lyric") ? norm($("f-colours").value) : "",
     font: cat === "lyric" || (editing && editing.category === "lyric") ? norm($("f-font").value) : "",
@@ -3262,7 +3259,7 @@ function validate(doc, targetStatus) {
   const cat = doc.category || (editing && editing.category);
   if (canEditBrief && !NIGHT_CATS.includes(cat) && !doc.title) return cat === "lyric" ? "Add the song title." : "Add a title for the video.";
   if (cmpBusy) return "Wait for the review copy to finish.";
-  for (const [k, label] of [["finalLink", "final video"], ["projectLink", "project file"], ["reviewLink", "review"], ["refLink", "reference"]])
+  for (const [k, label] of [["finalLink", "final video"], ["projectLink", "project file"], ["refLink", "reference"]])
     if (doc[k] && !validUrl(doc[k])) return `The ${label} link needs to be a full link starting with https://`;
   if (bFiles.concat(dFiles).some((f) => !f.id)) return "Wait for the files to finish uploading.";
   return "";
@@ -3405,7 +3402,6 @@ async function exportSheet() {
     ["Comments", (v) => (Array.isArray(v.feedback) ? v.feedback.length : 0)],
     ["Final video link", (v) => v.finalLink || ""],
     ["Project file link", (v) => v.projectLink || ""],
-    ["Review link", (v) => v.reviewLink || ""],
     ["Reference link", (v) => v.refLink || ""],
     ["Colours", (v) => v.colours || ""],
     ["Font", (v) => v.font || ""],
