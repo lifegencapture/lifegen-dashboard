@@ -896,6 +896,11 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
         <div class="inline"><input id="t-new" maxlength="60" placeholder="Add a name" aria-label="New team member name"><button class="btn sm line" type="button" id="t-add">Add</button></div>
         <p class="hint">Admins can post briefs, review and approve. Contributors pick up briefs and hand in videos. Removing someone keeps their name on videos they already edited.</p>
       </div>
+      <div class="field">
+        <span class="lbl">Telegram alerts</span>
+        <label class="inline" style="gap:10px"><input type="checkbox" id="t-tg-on" style="width:auto"> <span>Send alerts to the team's Telegram group</span></label>
+        <p class="hint">Turn off while you assign lots of videos at once. Alerts still show in everyone's bell; the ones made while it's off are never sent to Telegram later.</p>
+      </div>
       <div class="field" id="t-access-wrap">
         <span class="lbl">Who can sign in</span>
         <div class="files" id="t-access"></div>
@@ -1515,6 +1520,7 @@ function renderHome(admin) {
       section("c-final", "Approved · add final files", mine.filter(needsFinal), { empty: "No final files waiting." }),
       reqAll.length ? el("div", { class: "sec" }, [
         el("div", { class: "sechead" }, [el("h3", { text: "Finished videos: add your files" }), el("span", { class: "count", text: `${reqAll.length - reqLeft.length} of ${reqAll.length} done` })]),
+        reqLeft.length ? (() => { const due = reqLeft.map(filesDue).sort()[0], late = Date.parse(due) < Date.now(); return el("p", { class: "small", style: `margin:6px 0 0;${late ? "color:var(--bad, #e5484d)" : ""}`, text: late ? `${reqLeft.length === 1 ? "This was" : "These were"} due ${fmtDate(due)}. Please hand ${reqLeft.length === 1 ? "it" : "them"} in as soon as you can.` : `Please hand ${reqLeft.length === 1 ? "it" : "these"} in by ${fmtDate(due)}.` }); })() : null,
         el("div", { class: "progress", style: "margin:10px 0 4px" }, el("span", { style: `width:${Math.round(((reqAll.length - reqLeft.length) / reqAll.length) * 100)}%` })),
         el("div", { class: "rows" }, reqLeft.length ? reqLeft.map((v) => row(v, { missing: true })) : [el("div", { class: "emptyline", text: "All done. Thank you!" })]),
       ]) : null,
@@ -1618,16 +1624,20 @@ function renderCat(admin) {
 
 
 /* ================= files-needed catch-up ================= */
+// Editors get a week to hand in final files after they're requested.
+const FILES_DUE_DAYS = 7;
+const filesDueFrom = (iso) => { const d = new Date((Date.parse(iso) || Date.now()) + FILES_DUE_DAYS * 864e5); return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59).toISOString(); };
+const filesDue = (v) => v.filesDueAt || filesDueFrom(v.filesRequestedAt);
 async function requestFiles(list) {
-  const iso = new Date().toISOString(), byEditor = new Map();
+  const iso = new Date().toISOString(), due = filesDueFrom(iso), byEditor = new Map();
   let n = 0;
   for (const v of list) {
     if (!editorsOf(v).length) continue;
-    try { await db.doc("videos/" + v.id).update({ filesRequested: true, filesRequestedAt: iso }); n++; } catch { continue; }
+    try { await db.doc("videos/" + v.id).update({ filesRequested: true, filesRequestedAt: iso, filesDueAt: due }); n++; } catch { continue; }
     for (const e of editorsOf(v)) { if (FORMER_EDITORS.some((f) => key(f) === key(e))) continue; const k = key(e); byEditor.set(k, { name: e, count: (byEditor.get(k)?.count || 0) + 1 }); }
   }
   for (const { name, count } of byEditor.values())
-    pushNotify("files", { id: "", title: "Finished videos" }, [name], `Please add the files for ${count} finished video${count === 1 ? "" : "s"}: the final video link (or server backup for lyric videos), colours, and for worship songs the font and ProPresenter screenshots. Your list is on your Home page.`);
+    pushNotify("files", { id: "", title: "Finished videos" }, [name], `Please add the files for ${count} finished video${count === 1 ? "" : "s"}: the final video link (or server backup for lyric videos), colours, and for worship songs the font and ProPresenter screenshots. Your list is on your Home page. Due ${fmtDate(due)}.`, { count, due });
   toast(n ? `Requested files for ${n} video${n === 1 ? "" : "s"} from ${byEditor.size} editor${byEditor.size === 1 ? "" : "s"}` : "Nothing to request");
 }
 function renderChecklist() {
@@ -3432,6 +3442,7 @@ $("t-acc-add").onclick = () => {
 };
 $("t-acc-new").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("t-acc-add").click(); } });
 $("btn-team").onclick = () => {
+  $("t-tg-on").checked = false; db.doc("settings/telegram").get().then((s) => { $("t-tg-on").checked = !!(s.exists && s.data().on); }).catch(() => {});
   $("t-access-wrap").hidden = !window.lgAccess; $("t-import-wrap").hidden = !isOwner;
   if (window.lgAccess) window.lgAccess.get().then((m) => { accRows = { ...m }; renderAccess(); }).catch(() => { accRows = {}; renderAccess(); }); tRows = team().map((t) => ({ ...t })); $("t-drive").value = settings.driveFolder || ""; $("t-folders").replaceChildren(...Object.entries(DRIVE_FOLDERS).map(([c, n]) => el("label", { class: "inline", style: "gap:8px" }, [el("span", { class: "small", style: "width:150px; flex:none", text: n }), el("input", { type: "url", inputmode: "url", "data-folder": c, value: (settings.folders || {})[c] || "", placeholder: "https://drive.google.com/drive/folders/…", style: "flex:1" })]))); $("t-err").textContent = ""; renderTRows(); tdlg.showModal(); };
 $("t-import").addEventListener("change", async (e) => {
@@ -3462,6 +3473,7 @@ $("tform").addEventListener("submit", async (e) => {
   const folders = {};
   for (const inp of document.querySelectorAll("#t-folders [data-folder]")) { const v = inp.value.trim(); if (v && !validUrl(v)) { $("t-err").textContent = `Paste the full link for ${DRIVE_FOLDERS[inp.dataset.folder]}, starting with https://`; return; } if (v) folders[inp.dataset.folder] = v; }
   if (window.lgAccess) { try { await window.lgAccess.save(accRows); } catch { $("t-err").textContent = "Couldn't save who can sign in. Only admins can change it."; return; } }
+  try { await db.doc("settings/telegram").set({ on: $("t-tg-on").checked, updatedAt: new Date().toISOString(), updatedBy: myName() || "" }); } catch {}
   try { await db.doc("settings/main").set({ team: tRows, driveFolder: drive, folders, screens: screensList(), venues: venuesList(), updatedAt: new Date().toISOString() }); tdlg.close(); toast("Team saved"); }
   catch { $("t-err").textContent = "Couldn't save. Only admins with edit access can change the team."; }
 });
@@ -3603,12 +3615,12 @@ route();
 // Each event writes one record to "notify". The bell reads it here; the Telegram relay sends the pop-ups.
 let notifs = [];
 const adminNames = () => team().filter((t) => t.role === "admin").map((t) => t.name);
-function pushNotify(type, v, to, text) {
+function pushNotify(type, v, to, text, extra) {
   const me = key(myName());
   // You aren't told about your own actions, except a new brief assigned to yourself.
   const list = [...new Set((to || []).map(norm).filter((n) => n && (type === "brief" || key(n) !== me)))];
   if (!db || !list.length) return;
-  db.collection("notify").add({ type, videoId: v.id || "", title: videoTitle(v), text, to: list, by: myName() || "", at: new Date().toISOString(), sent: false }).catch(() => {});
+  db.collection("notify").add({ type, videoId: v.id || "", title: videoTitle(v), text, to: list, by: myName() || "", at: new Date().toISOString(), sent: false, ...(extra || {}) }).catch(() => {});
 }
 function seenAt() { try { return localStorage.getItem("lg-seen") || ""; } catch { return ""; } }
 function mineNotifs() { const me = key(myName()); return me ? notifs.filter((n) => (n.to || []).some((t) => key(t) === me)) : []; }
@@ -3642,10 +3654,10 @@ async function checkFinalReminders() {
     const asked = Date.parse(v.filesRequestedAt || "") || 0, last = Date.parse(v.lastFilesReminderAt || "") || 0;
     if (!asked || now - asked < DAY || (last && now - last < DAY)) continue;
     try { await db.doc("videos/" + v.id).update({ lastFilesReminderAt: iso }); } catch { continue; }
-    for (const e of editorsOf(v)) { if (FORMER_EDITORS.some((f) => key(f) === key(e))) continue; const k = key(e); byEditor.set(k, { name: e, count: (byEditor.get(k)?.count || 0) + 1 }); }
+    for (const e of editorsOf(v)) { if (FORMER_EDITORS.some((f) => key(f) === key(e))) continue; const k = key(e); const due = filesDue(v), prev = byEditor.get(k); byEditor.set(k, { name: e, count: (prev?.count || 0) + 1, due: prev && prev.due < due ? prev.due : due }); }
   }
-  for (const { name, count } of byEditor.values()) {
-    try { await db.doc(`notify/files-${key(name).replace(/[^a-z0-9]+/g, "-")}-${today}`).set({ type: "files-reminder", videoId: "", title: "Finished videos", to: [name], by: "LifeGen Video Dashboard", at: iso, sent: false, text: `Reminder: ${count} finished video${count === 1 ? " still needs" : "s still need"} files from you. Your list is on your Home page.` }); } catch {}
+  for (const { name, count, due } of byEditor.values()) {
+    try { await db.doc(`notify/files-${key(name).replace(/[^a-z0-9]+/g, "-")}-${today}`).set({ type: "files-reminder", videoId: "", title: "Finished videos", to: [name], by: "LifeGen Video Dashboard", at: iso, sent: false, count, due, text: `Reminder: ${count} finished video${count === 1 ? " still needs" : "s still need"} files from you (due ${fmtDate(due)}). Your list is on your Home page.` }); } catch {}
   }
   for (const v of videos.filter(needsFinal)) {
     const approved = Date.parse(v.approvedAt || "") || 0, last = Date.parse(v.lastFinalReminderAt || "") || 0;
