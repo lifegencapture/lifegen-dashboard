@@ -1785,6 +1785,11 @@ async function uploadFinal(d, file, ver = null) {
       if (++tries > 4) throw new Error(`the upload kept failing (Drive said ${r.status || "nothing: blocked or offline"}${r.body && r.status ? ": " + String(r.body).slice(0, 120) : ""}).`);
       await new Promise((w) => setTimeout(w, 2000 * tries));
     }
+    // Anyone with the link can view the file and its folder (every version of this video), so the
+    // projection team and other viewers never hit "Request access". Skipped quietly if Drive doesn't allow it.
+    set(99, "Sharing the link…");
+    const share = (id) => driveFetch(`${DRIVE_API}/files/${id}/permissions?supportsAllDrives=true`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role: "reader", type: "anyone" }) }).catch((e) => console.warn("Couldn't share", id, e));
+    await Promise.all([share(result.id), share(parent)]);
     const link = result.webViewLink || `https://drive.google.com/file/d/${result.id}/view`, now = new Date().toISOString();
     const fresh = videos.find((v) => v.id === d.id) || d;
     const { reqIndex, ...verData } = ver || {};
