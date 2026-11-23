@@ -1377,6 +1377,11 @@ function checklist(v) {
   }
   return items;
 }
+// Song titles are always in capitals (lyric videos and overtures), and openings/overtures
+// don't repeat "Opening:" or "Overture:" in the title (the category already says it).
+const CAPS_CATS = ["lyric", "overture"];
+const stripKind = (t) => String(t || "").replace(/^\s*(opening\s*(video)?\s*(\+\s*overture)?|overture)\s*:\s*/i, "").trim();
+const cleanTitle = (cat, t) => { let x = norm(t); if (NIGHT_CATS.includes(cat)) x = stripKind(x); return CAPS_CATS.includes(cat) ? x.toUpperCase() : x; };
 const missingOf = (v) => checklist(v).filter(([, ok]) => !ok).map(([n]) => n);
 const awaitingFiles = (v) => st(v) === "Approved" && !!v.filesRequested && missingOf(v).length > 0;
 const canRequestFiles = (v) => st(v) === "Approved" && !v.filesRequested && missingOf(v).length > 0;
@@ -1521,7 +1526,7 @@ function renderHome(admin) {
       section("c-final", "Approved · add final files", mine.filter(needsFinal), { empty: "No final files waiting." }),
       reqAll.length ? el("div", { class: "sec" }, [
         el("div", { class: "sechead" }, [el("h3", { text: "Finished videos: add your files" }), el("span", { class: "count", text: `${reqAll.length - reqLeft.length} of ${reqAll.length} done` })]),
-        reqLeft.length ? (() => { const due = reqLeft.map(filesDue).sort()[0], late = Date.parse(due) < Date.now(); return el("p", { class: "small", style: `margin:6px 0 0;${late ? "color:var(--bad, #e5484d)" : ""}`, text: late ? `${reqLeft.length === 1 ? "This was" : "These were"} due ${fmtDate(due)}. Please hand ${reqLeft.length === 1 ? "it" : "them"} in as soon as you can.` : `Please hand ${reqLeft.length === 1 ? "it" : "these"} in by ${fmtDate(due)}.` }); })() : null,
+        reqLeft.length ? (() => { const due = reqLeft.map(videoDue).sort()[0], late = Date.parse(due) < Date.now(); return el("p", { class: "small", style: `margin:6px 0 0;${late ? "color:var(--bad, #e5484d)" : ""}`, text: late ? `${reqLeft.length === 1 ? "This was" : "These were"} due ${fmtDate(due)}. Please hand ${reqLeft.length === 1 ? "it" : "them"} in as soon as you can.` : `Please hand ${reqLeft.length === 1 ? "it" : "these"} in by ${fmtDate(due)}.` }); })() : null,
         el("div", { class: "progress", style: "margin:10px 0 4px" }, el("span", { style: `width:${Math.round(((reqAll.length - reqLeft.length) / reqAll.length) * 100)}%` })),
         el("div", { class: "rows" }, reqLeft.length ? reqLeft.map((v) => row(v, { missing: true })) : [el("div", { class: "emptyline", text: "All done. Thank you!" })]),
       ]) : null,
@@ -1629,12 +1634,16 @@ function renderCat(admin) {
 const FILES_DUE_DAYS = 7;
 const filesDueFrom = (iso) => { const d = new Date((Date.parse(iso) || Date.now()) + FILES_DUE_DAYS * 864e5); return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59).toISOString(); };
 const filesDue = (v) => v.filesDueAt || filesDueFrom(v.filesRequestedAt);
+// Project-file backups get an extra week after the final videos.
+const backupDue = (v) => v.backupDueAt || new Date(Date.parse(filesDue(v)) + 7 * 864e5).toISOString();
+// The date that matters now: the final video's, until only the backups are left.
+const videoDue = (v) => (checklist(v).some(([, ok, k]) => !ok && k !== "nas" && k !== "hdd") ? filesDue(v) : backupDue(v));
 async function requestFiles(list) {
   const iso = new Date().toISOString(), due = filesDueFrom(iso), byEditor = new Map();
   let n = 0;
   for (const v of list) {
     if (!editorsOf(v).length) continue;
-    try { await db.doc("videos/" + v.id).update({ filesRequested: true, filesRequestedAt: iso, filesDueAt: due }); n++; } catch { continue; }
+    try { await db.doc("videos/" + v.id).update({ filesRequested: true, filesRequestedAt: iso, filesDueAt: due, backupDueAt: new Date(Date.parse(due) + 7 * 864e5).toISOString() }); n++; } catch { continue; }
     for (const e of editorsOf(v)) { if (FORMER_EDITORS.some((f) => key(f) === key(e))) continue; const k = key(e); byEditor.set(k, { name: e, count: (byEditor.get(k)?.count || 0) + 1 }); }
   }
   for (const { name, count } of byEditor.values())
@@ -1721,12 +1730,12 @@ async function driveFolderId(parent, name) {
 function finalFileName(d, file) {
   const ext = ((file.name.match(/\.[A-Za-z0-9]+$/) || [".mp4"])[0]).toLowerCase(), y = d.year || new Date().getFullYear();
   const night = hasNights(d.category, d.event) && d.night && d.night !== "All nights" ? " " + d.night : "";
-  const t = norm(d.title);
-  const base = d.category === "lyric" ? `${t.toUpperCase()} ${needsLook(d) ? "Background" : "Main Video"}`
+  const t = cleanTitle(d.category, d.title);
+  const base = d.category === "lyric" ? `${t} ${needsLook(d) ? "Background" : "Main Video"}`
     : d.category === "recap" ? `${d.event} ${y} ${d.purpose || "Recap"}`
     : d.category === "presentation" ? `${t || d.event} ${y}`
-    : d.category === "opening" ? `${d.event}${night} ${y} Opening`
-    : d.category === "overture" ? `${d.event}${night} ${y} Overture`
+    : d.category === "opening" ? `${t ? t + " " : ""}${d.event}${night} ${y} Opening`
+    : d.category === "overture" ? `${t ? t + " " : ""}${d.event}${night} ${y} Overture`
     : `${t || "Video"} ${y}`;
   return base.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() + ext;
 }
@@ -1746,11 +1755,13 @@ async function uploadFinal(d, file, ver = null) {
   // ver: a screen version (side screen, skirt screen, other tempo…) instead of the main video
   let name = finalFileName(d, file);
   if (ver) {
-    // e.g. "WHAT I SEE Side screen.mp4", "WHAT I SEE Main screen Power Conference KL 2024.mp4", "Power Conference KL 2022 Overture Skirt screen.mp4"
+    // e.g. "LION OF JUDAH Power Conference KL 2026 Side Screen.mp4", "LION OF JUDAH Side Screen.mp4" (regular service),
+    // "WHAT I SEE Power Conference KL Night 2 2022 Overture Skirt Screen.mp4"
     const ext = name.match(/\.[^.]+$/)[0];
-    const base = d.category === "lyric" ? norm(d.title).toUpperCase() : name.slice(0, -ext.length);
+    const base = d.category === "lyric" ? cleanTitle("lyric", d.title) : name.slice(0, -ext.length);
     const venue = d.category === "lyric" && ver.event && ver.event !== "Regular Service" ? [ver.event, ver.year].filter(Boolean).join(" ") : "";
-    name = [base, ver.ratio, ver.label, venue].filter(Boolean).join(" ").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() + ext;
+    const screen = String(ver.ratio || "").replace(/\b[a-z]/g, (c) => c.toUpperCase());
+    name = [base, venue, screen, ver.label].filter(Boolean).join(" ").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() + ext;
   }
   const segs = driveFolder(d).split(" › ").slice(2);   // after "LifeGen Final Video Storage › Category"
   DRIVE.lastError = null;
@@ -1870,7 +1881,8 @@ function renderRatios() {
     validUrl(d.finalLink) ? el("div", { class: "rtrow" }, [el("span", { class: "small strong", text: videoTitle(d) + " · main video" }), el("span", { class: "grow" }), el("span", { class: "rchip", text: "Main screen" }), el("a", { class: "vlink", href: d.finalLink, target: "_blank", rel: "noopener noreferrer", text: "Open ↗" })])
       : !lyric ? el("div", { class: "rtrow" }, [el("span", { class: "small strong", text: videoTitle(d) + " · main video" }), el("span", { class: "grow" }), el("span", { class: "rchip req", text: "Main screen" }),
           canAdd && !(DRIVE.busy && DRIVE.busy.id === d.id) ? el("button", { class: "btn sm", type: "button", text: DRIVE.ready ? "Choose file" : "Upload to Drive", onclick: () => startDriveUpload(d) }) : el("span", { class: "small muted", text: "Not uploaded yet" })]) : null,
-    ...list.map((r, i) => {
+    ...versionOrder(list).map((i) => {
+      const r = list[i];
       const req = r.status === "requested";
       if (i === rtEdit && canAdd) return ratioEditor(list, i);
       const meta = [videoTitle(d), r.year, r.label, r.event && r.event !== "Regular Service" ? r.event : ""].filter(Boolean).join(" · ");
@@ -1896,6 +1908,13 @@ function renderRatios() {
     }),
     !list.length && !validUrl(d.finalLink) && lyric ? el("p", { class: "hint", text: "No final videos yet." }) : null,
   ].filter(Boolean));
+}
+function versionOrder(list) {
+  const venues = venuesList().map(key), screens = screensList().map(key);
+  const ev = (r) => { const e = key(r.event || "Regular Service"); if (e === "regular service") return -1; const i = venues.indexOf(e); return i < 0 ? 999 : i; };
+  const sc = (r) => { const i = screens.indexOf(key(r.ratio)); return i < 0 ? 999 : i; };
+  return list.map((r, i) => i).sort((a, b) => { const x = list[a], y = list[b];
+    return ev(x) - ev(y) || String(x.event || "").localeCompare(String(y.event || "")) || (Number(y.year) || 0) - (Number(x.year) || 0) || sc(x) - sc(y) || String(x.label || "").localeCompare(String(y.label || "")) || a - b; });
 }
 function ratioEditor(list, i) {
   const r = list[i];
@@ -3042,7 +3061,7 @@ function titleCase(s) { return norm(s); }
 function renderNameBox() {
   const cat = $("f-cat").value || (editing && editing.category);
   const year = $("f-year").value || (editing && editing.year) || new Date().getFullYear();
-  const title = cat === "lyric" ? titleCase($("f-title").value).toUpperCase() : titleCase($("f-title").value);
+  const title = cleanTitle(cat, CAPS_CATS.includes(cat) ? $("f-title").value : titleCase($("f-title").value));
   const ev = $("f-event").value, night = hasNights(cat, ev) && $("f-night").value !== "All nights" ? " " + $("f-night").value : "";
   let names = [], note = "Use the same name for the project file.";
   const folder = driveFolder({ category: cat, songType: $("f-songtype").value, title: $("f-title").value, year: Number(year), event: ev, night: $("f-night").value, subtype: $("f-sub").value, platform: $("f-platform").value, channel: $("f-channel").value });
@@ -3256,7 +3275,7 @@ function collect() {
   const cat = $("f-cat").value, ev = EVENT_CATS.includes(cat);
   const out = {};
   if (canEditBrief) Object.assign(out, {
-    category: cat, title: cat === "lyric" ? norm($("f-title").value).toUpperCase() : norm($("f-title").value),
+    category: cat, title: cleanTitle(cat, $("f-title").value),
     subtype: cat === "other" ? $("f-sub").value : "",
     songType: cat === "lyric" ? $("f-songtype").value : "",
     lyricFormat: cat === "lyric" && $("f-songtype").value === "Praise" ? $("f-format").value : "",
@@ -3677,7 +3696,7 @@ async function checkFinalReminders() {
     const asked = Date.parse(v.filesRequestedAt || "") || 0, last = Date.parse(v.lastFilesReminderAt || "") || 0;
     if (!asked || now - asked < DAY || (last && now - last < DAY)) continue;
     try { await db.doc("videos/" + v.id).update({ lastFilesReminderAt: iso }); } catch { continue; }
-    for (const e of editorsOf(v)) { if (FORMER_EDITORS.some((f) => key(f) === key(e))) continue; const k = key(e); const due = filesDue(v), prev = byEditor.get(k); byEditor.set(k, { name: e, count: (prev?.count || 0) + 1, due: prev && prev.due < due ? prev.due : due }); }
+    for (const e of editorsOf(v)) { if (FORMER_EDITORS.some((f) => key(f) === key(e))) continue; const k = key(e); const due = videoDue(v), prev = byEditor.get(k); byEditor.set(k, { name: e, count: (prev?.count || 0) + 1, due: prev && prev.due < due ? prev.due : due }); }
   }
   for (const { name, count, due } of byEditor.values()) {
     try { await db.doc(`notify/files-${key(name).replace(/[^a-z0-9]+/g, "-")}-${today}`).set({ type: "files-reminder", videoId: "", title: "Finished videos", to: [name], by: "LifeGen Video Dashboard", at: iso, sent: false, count, due, text: `Reminder: ${count} finished video${count === 1 ? " still needs" : "s still need"} files from you (due ${fmtDate(due)}). Your list is on your Home page.` }); } catch {}
