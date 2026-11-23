@@ -1019,7 +1019,7 @@ const hasNights = (cat, ev) => NIGHT_CATS.includes(cat) && isPC(ev);
 const CAT_OF_VIEW = { recaps: "recap", presentations: "presentation", openings: "opening", overtures: "overture", others: "other" };
 const EVENTS = ["Power Conference KL", "Power Conference JB", "Power Festival", "Tribal Gathering", "Easter", "Christmas", "Baptism", "Camp", "Year End Recap", "Other"];
 const PRES_EVENTS = ["Easter", "Christmas", "Father's Day", "Mother's Day", "Other"];   // media presentations only
-const BIG_EVENTS = ["Power Conference KL", "Power Conference JB", "Camp", "Baptism", "Easter", "Christmas"];   // also backed up to HDD
+const BIG_EVENTS = ["Power Conference KL", "Power Conference JB", "Power Festival", "Camp", "Baptism", "Easter", "Christmas"];   // also backed up to HDD
 const CHANNELS = ["LifeGen Church (@lifegenchurch)", "LifeGen Worship (@lifegenworship)", "Power (@power.mvmt)"];
 const PLATFORMS = ["Instagram", "YouTube", "TikTok"];
 const isPC = (e) => /^(Power (Conference|Festival)|Tribal Gathering)/.test(e || "");   // events with one opening / overture per night (up to 3)
