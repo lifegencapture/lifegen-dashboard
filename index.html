@@ -758,8 +758,8 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
             <input id="rt-label" maxlength="60" placeholder="Version name (optional), e.g. 128 BPM" aria-label="Version name" style="width:240px">
           </div>
           <div class="inline" style="flex-wrap:wrap">
-            <input id="rt-link" type="url" inputmode="url" placeholder="…or paste a Drive link (https://…)" aria-label="Drive link" style="flex:1 1 240px">
             <button class="btn sm" type="button" id="rt-upload">Upload to Drive</button>
+            <input id="rt-link" type="url" inputmode="url" placeholder="…or paste a Drive link if it's already there" aria-label="Drive link" style="flex:1 1 240px">
             <button class="btn sm line" type="button" id="rt-save">Add link</button>
             <button class="btn sm line" type="button" id="rt-request" hidden>Request this video</button>
           </div>
@@ -1141,8 +1141,9 @@ function fileLinks(v) {
     const main = vers.find((r) => /main screen/i.test(r.ratio || "")) || vers[0];
     if (!validUrl(v.finalLink)) out.push(el("a", { class: "vlink", href: main.link, target: "_blank", rel: "noopener noreferrer", text: "Final ↗", title: main.ratio || "Final video", onclick: (e) => e.stopPropagation() }));
     const more = vers.length - (validUrl(v.finalLink) ? 0 : 1);
-    if (more > 0) out.push(el("span", { class: "small muted", text: `+${more} version${more === 1 ? "" : "s"}` }));
+    if (more > 0 && !videoFolderUrl(v)) out.push(el("span", { class: "small muted", text: `+${more} version${more === 1 ? "" : "s"}` }));
   }
+  if (videoFolderUrl(v) && (vers.length + (validUrl(v.finalLink) ? 1 : 0)) > 1) out.push(el("a", { class: "vlink", href: videoFolderUrl(v), target: "_blank", rel: "noopener noreferrer", text: `All ${vers.length + (validUrl(v.finalLink) && !vers.some((r) => /main screen/i.test(r.ratio || "")) ? 1 : 0)} versions ↗`, title: "The Drive folder with the main video and every screen version", onclick: (e) => e.stopPropagation() }));
   if (validUrl(v.projectLink)) out.push(el("a", { class: "vlink", href: v.projectLink, target: "_blank", rel: "noopener noreferrer", text: "Project ↗", onclick: (e) => e.stopPropagation() }));
   return out.length ? el("div", { class: "links" }, out) : el("span", { class: "missing", text: "No files yet" });
 }
@@ -1332,6 +1333,8 @@ function driveFolder(v) {
   const name = v.category === "presentation" ? (v.event && v.event !== "Other" ? v.event : t || "Presentation name") : v.event || "Event name";
   return `${top} › ${y} › ${name}`;
 }
+// The exact Drive folder holding a video's main file and every screen version (saved on first upload).
+const videoFolderUrl = (v) => (v && v.driveFolderId ? `https://drive.google.com/drive/folders/${v.driveFolderId}` : "");
 const folderLink = (cat) => { const f = (settings.folders || {})[cat]; return validUrl(f) ? f : validUrl(settings.driveFolder) ? settings.driveFolder : ""; };
 // Where project files and assets are backed up on the church server (NAS).
 function nasPath(v) {
@@ -1351,7 +1354,7 @@ function finalStepText(v) {
   return v.category === "lyric"
     ? `upload the final video (and any other screen versions) to ${driveFolder(v)} and add each one under Final videos. Then back up the project files and all assets (backgrounds${needsLook(v) ? ", font file" : ""}, exports) to the church server (NAS) › ${nasPath(v)} and tick the server backup box`
     : !needsNas(v) ? `upload the final video to ${driveFolder(v)}`
-    : `upload the final video to ${driveFolder(v)} and paste the link on the dashboard. Then back up the project files & assets to the church server (NAS)${needsHdd(v) ? " and the event HDD (ask Desmond, Jon or Maxine which one)" : ""} and tick it off`;
+    : `upload the final video${NIGHT_CATS.includes(v.category) ? " (and any side or skirt screen versions, under Final videos)" : ""} to ${driveFolder(v)} with Upload to Drive. Then back up the project files & assets to the church server (NAS)${needsHdd(v) ? " and the event HDD (ask Desmond, Jon or Maxine which one)" : ""} and tick it off`;
 }
 /* What each finished video still needs (the catch-up checklist). */
 // Worship songs, and fast songs made as a background, are played with ProPresenter lyrics on top:
@@ -1742,7 +1745,13 @@ async function startDriveUpload(d, ver = null) {
 async function uploadFinal(d, file, ver = null) {
   // ver: a screen version (side screen, skirt screen, other tempo…) instead of the main video
   let name = finalFileName(d, file);
-  if (ver) { const ext = name.match(/\.[^.]+$/)[0]; name = `${name.slice(0, -ext.length)} ${[ver.ratio, ver.label].filter(Boolean).join(" ")}`.replace(/\s+/g, " ").trim() + ext; }
+  if (ver) {
+    // e.g. "WHAT I SEE Side screen.mp4", "WHAT I SEE Main screen Power Conference KL 2024.mp4", "Power Conference KL 2022 Overture Skirt screen.mp4"
+    const ext = name.match(/\.[^.]+$/)[0];
+    const base = d.category === "lyric" ? norm(d.title).toUpperCase() : name.slice(0, -ext.length);
+    const venue = d.category === "lyric" && ver.event && ver.event !== "Regular Service" ? [ver.event, ver.year].filter(Boolean).join(" ") : "";
+    name = [base, ver.ratio, ver.label, venue].filter(Boolean).join(" ").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() + ext;
+  }
   const segs = driveFolder(d).split(" › ").slice(2);   // after "LifeGen Final Video Storage › Category"
   DRIVE.lastError = null;
   DRIVE.busy = { id: d.id, pct: 0, msg: `Finding the folder for ${name}…` }; renderChecklist();
@@ -1778,11 +1787,14 @@ async function uploadFinal(d, file, ver = null) {
     }
     const link = result.webViewLink || `https://drive.google.com/file/d/${result.id}/view`, now = new Date().toISOString();
     const fresh = videos.find((v) => v.id === d.id) || d;
+    const { reqIndex, ...verData } = ver || {};
+    const done = { ...verData, link, status: "done", by: myName() || "", doneAt: now };
     const patch = ver
-      ? { ratios: [...(fresh.ratios || []), { ...ver, link, status: "done", by: myName() || "", doneAt: now }] }
+      ? { ratios: Number.isInteger(reqIndex) && (fresh.ratios || [])[reqIndex] ? fresh.ratios.map((x, j) => (j === reqIndex ? { ...x, ...done } : x)) : [...(fresh.ratios || []), done] }
       : d.category === "lyric"
       ? { ratios: [...(fresh.ratios || []), { ratio: "Main screen", res: "1920×1080", label: "", event: "Regular Service", year: fresh.year || null, link, status: "done", by: myName() || "", doneAt: now }] }
       : { finalLink: link, deliveredAt: now };
+    patch.driveFolderId = parent;
     await db.doc("videos/" + d.id).update({ ...patch, updatedAt: now });
     if (editing && editing.id === d.id) { Object.assign(editing, patch); if (patch.finalLink) $("f-final").value = link; }   // keep the form in step, so Save doesn't wipe the new link
     pushNotify(ver ? "ratio-done" : "final", d, adminNames(), ver ? `${myName() || "The editor"} uploaded the ${ver.ratio} version of ${videoTitle(d)} to Google Drive` : `${myName() || "The editor"} uploaded the final video of ${videoTitle(d)} to Google Drive`);
@@ -1840,11 +1852,19 @@ function renderRatios() {
   if (d.category !== "lyric" && /main screen/i.test($("rt-ratio").value) && screensList().length > 1) { $("rt-ratio").value = screensList()[1]; $("rt-res").value = resFor(screensList()[1]); }
   $("rt-upload").textContent = DRIVE.ready ? "Choose file" : "Upload to Drive";
   if (DRIVE.busy && DRIVE.busy.id === d.id) $("rt-err").textContent = `${DRIVE.busy.pct}% · ${DRIVE.busy.msg}`;
-  $("rt-hint").textContent = d.category === "lyric" ? "Every copy of this song: the main screen version, plus side screen, skirt screen or other-tempo versions." : "Versions for other screens, like side or skirt screens. The main video is in the checklist above.";
-  { const fl = folderLink(d.category); $("rt-folder").replaceChildren("Upload to ", el("b", { text: driveFolder(d) }), fl ? el("a", { class: "vlink", href: fl, target: "_blank", rel: "noopener noreferrer", text: ` Open the ${DRIVE_FOLDERS[d.category] || "Drive"} folder ↗`, style: "margin-left:6px" }) : ""); $("rt-folder").hidden = !canWrite; }
+  const lyric = d.category === "lyric";
+  $("rt-event").hidden = $("rt-year").hidden = !lyric;   // openings and overtures belong to one event and year already
+  $("rt-hint").textContent = lyric ? "Every copy of this song: main screen, side screen, skirt screen and any other versions." : "The main video plus its side screen, skirt screen and any other versions.";
+  { const exact = videoFolderUrl(d), fl = exact || folderLink(d.category);
+    $("rt-folder").replaceChildren(
+      canAdd ? "All versions go in one Drive folder, named for you when you upload: " : "Drive folder: ",
+      el("b", { text: driveFolder(d) }),
+      fl ? el("a", { class: "vlink", href: fl, target: "_blank", rel: "noopener noreferrer", text: exact ? " Open this folder ↗" : ` Open the ${DRIVE_FOLDERS[d.category] || "Drive"} folder ↗`, style: "margin-left:6px" }) : ""); }
   $("rt-add").hidden = !canAdd; $("rt-request").hidden = !admin;
   $("rt-list").replaceChildren(...[
-    validUrl(d.finalLink) ? el("div", { class: "rtrow" }, [el("span", { class: "small strong", text: videoTitle(d) + " · main export" }), el("span", { class: "grow" }), el("span", { class: "rchip", text: "Main screen" }), el("a", { class: "vlink", href: d.finalLink, target: "_blank", rel: "noopener noreferrer", text: "Open ↗" })]) : null,
+    validUrl(d.finalLink) ? el("div", { class: "rtrow" }, [el("span", { class: "small strong", text: videoTitle(d) + " · main video" }), el("span", { class: "grow" }), el("span", { class: "rchip", text: "Main screen" }), el("a", { class: "vlink", href: d.finalLink, target: "_blank", rel: "noopener noreferrer", text: "Open ↗" })])
+      : !lyric ? el("div", { class: "rtrow" }, [el("span", { class: "small strong", text: videoTitle(d) + " · main video" }), el("span", { class: "grow" }), el("span", { class: "rchip req", text: "Main screen" }),
+          canAdd && !(DRIVE.busy && DRIVE.busy.id === d.id) ? el("button", { class: "btn sm", type: "button", text: DRIVE.ready ? "Choose file" : "Upload to Drive", onclick: () => startDriveUpload(d) }) : el("span", { class: "small muted", text: "Not uploaded yet" })]) : null,
     ...list.map((r, i) => {
       const req = r.status === "requested";
       if (i === rtEdit && canAdd) return ratioEditor(list, i);
@@ -1857,7 +1877,8 @@ function renderRatios() {
           await saveRatios(list.map((x, j) => (j === i ? { ...x, link, status: "done", by: myName() || "", doneAt: new Date().toISOString() } : x)));
           pushNotify("ratio-done", d, adminNames(), `${myName() || "The editor"} added the ${r.ratio} version of ${videoTitle(d)}${r.event ? " for " + r.event : ""}`);
         } });
-        return el("span", { class: "inline" }, [inp, b]);
+        const up = el("button", { class: "btn sm", type: "button", text: DRIVE.ready ? "Choose file" : "Upload to Drive", disabled: !!DRIVE.busy, onclick: () => { const { status, requestedBy, requestedAt, ...rest } = r; startDriveUpload(d, { ...rest, reqIndex: i }); } });
+        return el("span", { class: "inline", style: "flex-wrap:wrap" }, [up, inp, b]);
       })() : null;
       return el("div", { class: "rtrow" }, [
         el("span", { class: "small strong", text: meta + (req ? ` · requested by ${r.requestedBy || "a media head"}` : "") }),
@@ -1868,7 +1889,7 @@ function renderRatios() {
         canAdd && admin ? el("button", { class: "btn quiet sm", type: "button", text: "Remove", onclick: () => { if (confirm(`Remove this final video of ${videoTitle(d)}?`)) saveRatios(list.filter((_, j) => j !== i)); } }) : null,
       ]);
     }),
-    !list.length && !validUrl(d.finalLink) ? el("p", { class: "hint", text: "No final videos yet." }) : null,
+    !list.length && !validUrl(d.finalLink) && lyric ? el("p", { class: "hint", text: "No final videos yet." }) : null,
   ].filter(Boolean));
 }
 function ratioEditor(list, i) {
@@ -1901,7 +1922,8 @@ async function saveRatios(next) {
   catch { $("rt-err").textContent = "Couldn't save. Try again."; }
 }
 function ratioDraft() {
-  return { ratio: $("rt-ratio").value, res: norm($("rt-res").value), label: norm($("rt-label").value), event: $("rt-event").value, year: $("rt-year").value ? Number($("rt-year").value) : null };
+  const lyric = editing && editing.category === "lyric";
+  return { ratio: $("rt-ratio").value, res: norm($("rt-res").value), label: norm($("rt-label").value), event: lyric ? $("rt-event").value : editing.event || "", year: lyric ? ($("rt-year").value ? Number($("rt-year").value) : null) : editing.year || null };
 }
 $("rt-upload").onclick = () => { if (editing) startDriveUpload(editing, ratioDraft()); };
 $("rt-save").onclick = async () => {
