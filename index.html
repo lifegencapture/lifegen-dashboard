@@ -184,6 +184,10 @@ nav.main a[aria-current="page"]::before { content: ""; width: 5px; height: 5px; 
 .p-prog { background: var(--info-soft); color: var(--info); }
 .p-review { background: var(--review-soft); color: var(--review); }
 .p-changes { background: var(--late-soft); color: var(--late); }
+.filesalert { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin: 0 0 18px; padding: 16px 18px; border-radius: 14px; border: 1.5px solid var(--late); background: var(--late-soft); color: var(--late); min-width: 0; }
+.filesalert .big { font-weight: 800; font-size: 1.15rem; line-height: 1.3; }
+.filesalert .sub { color: var(--ink); font-size: 0.9rem; margin-top: 4px; line-height: 1.45; }
+.filesalert .btn { background: var(--late); border-color: var(--late); color: #fff; flex: none; }
 .p-ok { background: var(--ok-soft); color: var(--ok); }
 .p-late { background: var(--late-soft); color: var(--late); }
 .p-soon { background: var(--warn-soft); color: var(--warn); }
@@ -498,6 +502,7 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
         <button class="btn" type="button" id="btn-brief" hidden>+ New brief</button>
       </div>
     </div>
+    <div class="filesalert" id="filesalert" role="alert" hidden></div>
     <div class="stats" id="stats"></div>
     <div id="sections" class="view" style="gap:36px"></div>
   </section>
@@ -1418,10 +1423,32 @@ function renderViewerResults() {
     el("span", { class: "muted small", text: [v.category === "lyric" ? lyricKind(v) : CAT[v.category]?.label, v.event, v.year].filter(Boolean).join(" · ") }),
   ])) : [el("p", { class: "hint", style: "margin:0", text: "Nothing found. Try part of the name, or browse below." })]));
 }
+// The red notice at the top of an editor's Home: how many videos still need their files.
+function renderFilesAlert(left, ratioReqs = []) {
+  const box = $("filesalert");
+  const nVers = ratioReqs.length;
+  if (!left.length && !nVers) { box.hidden = true; return; }
+  const needVideo = left.filter((v) => checklist(v).some(([, ok, k]) => !ok && k === "final")).length;
+  const backupsOnly = left.length - needVideo;
+  const fd = left.length ? left.map(filesDue).sort()[0] : "", bd = left.length ? left.map(backupDue).sort()[0] : "";
+  const late = fd && needVideo && Date.parse(fd) < Date.now();
+  const parts = [];
+  if (needVideo) parts.push(`${needVideo} still need${needVideo === 1 ? "s" : ""} the final video on Google Drive${fd ? ` (due ${fmtDate(fd)})` : ""}`);
+  if (backupsOnly) parts.push(`${backupsOnly} just need${backupsOnly === 1 ? "s" : ""} the project files backed up to the server${bd ? ` (due ${fmtDate(bd)})` : ""}`);
+  if (nVers) parts.push(`${nVers} ${nVers === 1 ? "has" : "have"} a screen version requested`);
+  box.replaceChildren(
+    el("div", { style: "min-width:0; flex:1 1 280px" }, [
+      el("div", { class: "big", text: `⚠ You have ${plural(left.length || nVers, "video")} to hand in${late ? ". Some are overdue" : ""}` }),
+      el("div", { class: "sub", text: parts.join(" · ") + ". Open each one and click Upload to Drive: it goes straight into the right folder." }),
+    ]),
+    el("button", { class: "btn sm", type: "button", text: "Show my list", onclick: () => { const t = $("sec-files") || $("c-ratios"); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); } }),
+  );
+  box.hidden = false;
+}
 function renderViewerHome() {
   $("weeklabel").textContent = "LifeGen video library";
   $("hello").textContent = "Hello there! 👋";
-  $("stats").replaceChildren();
+  $("stats").replaceChildren(); $("filesalert").hidden = true;
   const search = el("input", { class: "vsearch", id: "v-search", type: "search", placeholder: "Search, e.g. power kl 2026 or joy to the world", "aria-label": "Search for a song, event or video", value: vQuery });
   search.addEventListener("input", () => { vQuery = search.value; renderViewerResults(); });
   const info = (title, lines) => el("div", { class: "panel stack" }, [el("div", { class: "label", text: title }), el("ul", { style: "margin:0; padding-left:18px; line-height:1.6" }, lines.map(([b, r]) => el("li", {}, [el("b", { text: b }), " " + r])))]);
@@ -1449,6 +1476,7 @@ function renderViewerHome() {
   renderViewerResults();
 }
 function renderHome(admin) {
+  $("filesalert").hidden = true;
   $("weeklabel").textContent = weekLabel();
   const nm = myName() || (me && me.name) || "";
   $("hello").textContent = nm ? `Hello, ${nm.split(" ")[0]}` : "Hello";
@@ -1511,6 +1539,7 @@ function renderHome(admin) {
     const finals = mine.filter(needsFinal);
     const reqAll = mine.filter((v) => v.filesRequested && st(v) === "Approved"), reqLeft = reqAll.filter((v) => missingOf(v).length);
     const ratioReqs = mine.filter((v) => (v.ratios || []).some((r) => r.status === "requested"));
+    renderFilesAlert(reqLeft, ratioReqs);
     fillKids($("sections"), 
       finals.length ? el("div", { class: "finalbanner", role: "status" }, [
         el("div", {}, [
@@ -1524,7 +1553,7 @@ function renderHome(admin) {
       section("c-todo", "Ready to start", todo, { empty: "Nothing waiting. Nice." }),
       section("c-review", "With the media heads", review, { empty: "Nothing waiting for review." }),
       section("c-final", "Approved · add final files", mine.filter(needsFinal), { empty: "No final files waiting." }),
-      reqAll.length ? el("div", { class: "sec" }, [
+      reqAll.length ? el("div", { class: "sec", id: "sec-files" }, [
         el("div", { class: "sechead" }, [el("h3", { text: "Finished videos: add your files" }), el("span", { class: "count", text: `${reqAll.length - reqLeft.length} of ${reqAll.length} done` })]),
         reqLeft.length ? (() => { const due = reqLeft.map(videoDue).sort()[0], late = Date.parse(due) < Date.now(); return el("p", { class: "small", style: `margin:6px 0 0;${late ? "color:var(--bad, #e5484d)" : ""}`, text: late ? `${reqLeft.length === 1 ? "This was" : "These were"} due ${fmtDate(due)}. Please hand ${reqLeft.length === 1 ? "it" : "them"} in as soon as you can.` : `Please hand ${reqLeft.length === 1 ? "it" : "these"} in by ${fmtDate(due)}.` }); })() : null,
         el("div", { class: "progress", style: "margin:10px 0 4px" }, el("span", { style: `width:${Math.round(((reqAll.length - reqLeft.length) / reqAll.length) * 100)}%` })),
