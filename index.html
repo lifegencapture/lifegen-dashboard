@@ -687,11 +687,12 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
           <section id="review-wrap" class="reviewbox" hidden>
             <div class="label" style="color:var(--review)">Done reviewing?</div>
             <textarea id="f-feedback" maxlength="2000" placeholder="Optional overall note for the editor. Say what works too." style="min-height:56px"></textarea>
+            <label class="inline" style="gap:10px; flex-wrap:wrap"><span class="small strong">New due date for the next version</span><input id="f-newdue" type="date" style="width:auto; padding:6px 8px"><span class="muted small" id="f-newdue-cur"></span></label>
             <div class="inline" style="flex-wrap:wrap">
               <button class="btn late sm" type="button" id="btn-changes">Send comments to editor</button>
               <button class="btn ok sm" type="button" id="btn-approve">Approve</button>
             </div>
-            <p class="hint" id="rev-hint">Sending your comments changes the status to Changes needed so the editor knows to make a new version.</p>
+            <p class="hint" id="rev-hint">Sending your comments changes the status to Changes needed so the editor knows to make a new version, and tells them the new due date if you set one.</p>
           </section>
         <div class="cutup" id="cutup">
           <div class="cmp" id="cmp-wrap">
@@ -2471,6 +2472,7 @@ function renderFeedback() {
     f.text ? el("div", { class: "txt", text: f.text }) : null,
   ])));
   $("review-wrap").hidden = !(admin && editing && s === "In review" && canWrite);
+  if (!$("review-wrap").hidden) { $("f-newdue").value = ""; $("f-newdue").min = todayISO(); $("f-newdue-cur").textContent = editing.dueDate ? `Currently ${fmtDate(editing.dueDate)}` : "No due date yet"; }
   const openNow = allNotes.filter((f) => !f.resolved && (f.v || 1) === cv).length;
   const who = editing ? editorsText(editing) : "editor";
   $("btn-changes").textContent = openNow ? `Send ${openNow} comment${openNow === 1 ? "" : "s"} to ${who === "Unassigned" ? "editor" : who}` : `Send to ${who === "Unassigned" ? "editor" : who}`;
@@ -3411,10 +3413,14 @@ async function review(kind) {
   const cv = currentCut() ? currentCut().v : undefined;
   const fb = [...feedbackOf(), { id: Math.random().toString(36).slice(2, 10), kind, text, by: myName() || "Media head", at: new Date().toISOString(), ...(cv ? { v: cv } : {}) }];
   const target = editing;
-  if (await saveVideo(kind === "approved" ? "Approved" : "Needs changes", { feedback: fb })) {
+  // A new due date for the next version, set while sending the comments back.
+  const newDue = kind === "changes" ? $("f-newdue").value : "";
+  if (newDue && newDue < todayISO()) { $("f-err").textContent = "Pick a new due date from today onwards."; return; }
+  if (newDue) $("f-due").value = newDue;   // keep the brief's due date field in step, since Save reads the whole form
+  if (await saveVideo(kind === "approved" ? "Approved" : "Needs changes", { feedback: fb, ...(newDue ? { dueDate: newDue } : {}) })) {
     if (kind === "approved") pushNotify("approved", target, editorsOf(target), `${videoTitle(target)} is approved 🎉 Final steps: ${finalStepText(target)}.`);
-    else pushNotify("changes", target, editorsOf(target), `${myName() || "A media head"} sent ${openNotes ? openNotes + " comment" + (openNotes === 1 ? "" : "s") : "feedback"} on ${videoTitle(target)}: changes needed`);
-    toast(kind === "approved" ? "Approved" : `Sent to ${editorsText(target)}: changes needed`);
+    else pushNotify("changes", target, editorsOf(target), `${myName() || "A media head"} sent ${openNotes ? openNotes + " comment" + (openNotes === 1 ? "" : "s") : "feedback"} on ${videoTitle(target)}: changes needed.${newDue ? ` Please send the next version by ${fmtDate(newDue)}.` : ""}`, newDue ? { due: new Date(newDue + "T23:59:00+08:00").toISOString() } : undefined);
+    toast(kind === "approved" ? "Approved" : `Sent to ${editorsText(target)}: changes needed${newDue ? `, due ${fmtDate(newDue)}` : ""}`);
   }
 }
 $("btn-approve").onclick = () => review("approved");
