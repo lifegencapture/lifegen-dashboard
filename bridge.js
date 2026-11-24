@@ -156,6 +156,8 @@
     if (!role) { showNoAccess(email); return; }
     session = { user: u, email, role, owner };
     started = true;
+    // Remember when each person last opened the dashboard (Team page shows it, viewers included).
+    fs.doc("logins/" + email).set({ email, name: u.displayName || "", role, lastAt: new Date().toISOString() }, { merge: true }).catch(() => {});
     hideGate();
     resolveReady();
   });

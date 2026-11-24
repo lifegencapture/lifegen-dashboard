@@ -55,5 +55,12 @@ service cloud.firestore {
       allow create, update: if isEditor() && request.auth.uid == uid;
       allow delete: if isOwner();
     }
+
+    // Last sign-in per person (shown on the Team page). Each person writes only their own.
+    match /logins/{addr} {
+      allow read: if isMember();
+      allow create, update: if isMember() && addr == email();
+      allow delete: if isAdmin();
+    }
   }
 }

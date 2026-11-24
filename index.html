@@ -1000,8 +1000,8 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="firebase-config.js"></script>
-<script src="bridge.js"></script>
+<script src="firebase-config.js?v=2"></script>
+<script src="bridge.js?v=2"></script>
 <script>
 /* ================= constants ================= */
 const UPLOAD_MAX = 1024 * 1024 * 1024;   // Firebase Storage: drafts up to 1 GB upload straight away, no shrinking
@@ -3523,10 +3523,15 @@ async function exportSheet() {
 }
 $("btn-export").onclick = exportSheet;
 let accRows = {};
+let logins = {};   // email → { lastAt, name }
+const seenText = (email) => { const l = logins[email]; if (!l || !l.lastAt) return null; const d = new Date(l.lastAt), today = new Date().toDateString() === d.toDateString(); return `✓ signed in · last seen ${today ? "today, " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString(undefined, { day: "numeric", month: "short" })}`; };
 function renderAccess() {
   const order = { admin: 0, editor: 1, viewer: 2 };
   $("t-access").replaceChildren(...Object.entries(accRows).sort((a, b) => order[a[1]] - order[b[1]] || a[0].localeCompare(b[0])).map(([email, role]) => el("div", { class: "file" }, [
-    el("span", { class: "small strong", style: "overflow-wrap:anywhere", text: email }),
+    el("div", { style: "min-width:0" }, [
+      el("div", { class: "small strong", style: "overflow-wrap:anywhere", text: email }),
+      seenText(email) ? el("div", { class: "small", style: "color:var(--ok)", text: seenText(email) }) : el("div", { class: "muted small", text: "not signed in yet" }),
+    ]),
     el("div", { class: "inline" }, [
       (() => { const s = el("select", { "aria-label": `Access for ${email}`, style: "width:auto; padding:6px 8px" }, [el("option", { value: "editor", text: "Editor" }), el("option", { value: "viewer", text: "View only" }), el("option", { value: "admin", text: "Admin" })]); s.value = role; s.onchange = () => (accRows[email] = s.value); return s; })(),
       el("button", { class: "btn quiet sm", type: "button", text: "Remove", onclick: () => { delete accRows[email]; renderAccess(); } }),
@@ -3542,7 +3547,10 @@ $("t-acc-new").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.p
 $("btn-team").onclick = () => {
   $("t-tg-on").checked = false; db.doc("settings/telegram").get().then((s) => { $("t-tg-on").checked = !!(s.exists && s.data().on); }).catch(() => {});
   $("t-access-wrap").hidden = !window.lgAccess; $("t-import-wrap").hidden = !isOwner;
-  if (window.lgAccess) window.lgAccess.get().then((m) => { accRows = { ...m }; renderAccess(); }).catch(() => { accRows = {}; renderAccess(); }); tRows = team().map((t) => ({ ...t })); $("t-drive").value = settings.driveFolder || ""; $("t-folders").replaceChildren(...Object.entries(DRIVE_FOLDERS).map(([c, n]) => el("label", { class: "inline", style: "gap:8px" }, [el("span", { class: "small", style: "width:150px; flex:none", text: n }), el("input", { type: "url", inputmode: "url", "data-folder": c, value: (settings.folders || {})[c] || "", placeholder: "https://drive.google.com/drive/folders/…", style: "flex:1" })]))); $("t-err").textContent = ""; renderTRows(); tdlg.showModal(); };
+  if (window.lgAccess) {
+    window.lgAccess.get().then((m) => { accRows = { ...m }; renderAccess(); }).catch(() => { accRows = {}; renderAccess(); });
+    db.collection("logins").get().then((snap) => { logins = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()])); renderAccess(); }).catch(() => {});
+  } tRows = team().map((t) => ({ ...t })); $("t-drive").value = settings.driveFolder || ""; $("t-folders").replaceChildren(...Object.entries(DRIVE_FOLDERS).map(([c, n]) => el("label", { class: "inline", style: "gap:8px" }, [el("span", { class: "small", style: "width:150px; flex:none", text: n }), el("input", { type: "url", inputmode: "url", "data-folder": c, value: (settings.folders || {})[c] || "", placeholder: "https://drive.google.com/drive/folders/…", style: "flex:1" })]))); $("t-err").textContent = ""; renderTRows(); tdlg.showModal(); };
 $("t-import").addEventListener("change", async (e) => {
   const f = e.target.files[0]; e.target.value = ""; if (!f || !isOwner) return;
   const msg = $("t-import-msg");
