@@ -2514,7 +2514,7 @@ $("cm-text").addEventListener("focus", () => { if (!player.paused) player.pause(
 
 
 /* ProPresenter reference screenshots (worship lyric videos only) */
-const PP_LABELS = ["Intro", "Verse 1", "Verse 2", "Verse 3", "Pre-chorus", "Chorus", "Bridge", "Tag", "Outro", "Other"];
+const PP_LABELS = ["Whole song", "Intro", "Verse 1", "Verse 2", "Verse 3", "Pre-chorus", "Chorus", "Bridge", "Tag", "Outro", "Other"];
 let pendingSlides = [];
 const slidesOf = () => (editing ? (Array.isArray(editing.slides) ? editing.slides : []) : pendingSlides);
 function isWorship() {
@@ -2548,7 +2548,7 @@ async function saveSlides(next, removedId) {
 }
 function guessSection(name) {
   const n = name.toLowerCase();
-  return /pre[\s_-]?chorus/.test(n) ? "Pre-chorus" : /chorus/.test(n) ? "Chorus" : /bridge/.test(n) ? "Bridge" : /\btag\b/.test(n) ? "Tag"
+  return /whole|full[\s_-]?song|all[\s_-]?sections/.test(n) ? "Whole song" : /pre[\s_-]?chorus/.test(n) ? "Pre-chorus" : /chorus/.test(n) ? "Chorus" : /bridge/.test(n) ? "Bridge" : /\btag\b/.test(n) ? "Tag"
     : /intro/.test(n) ? "Intro" : /outro|ending/.test(n) ? "Outro" : /verse[\s_-]?3/.test(n) ? "Verse 3" : /verse[\s_-]?2/.test(n) ? "Verse 2" : "Verse 1";
 }
 $("pp-file").addEventListener("change", async (e) => {
