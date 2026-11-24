@@ -186,6 +186,7 @@ nav.main a[aria-current="page"]::before { content: ""; width: 5px; height: 5px; 
 .p-changes { background: var(--late-soft); color: var(--late); }
 .filesalert { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin: 0 0 18px; padding: 16px 18px; border-radius: 14px; border: 1.5px solid var(--late); background: var(--late-soft); color: var(--late); min-width: 0; }
 .filesalert .big { font-weight: 800; font-size: 1.15rem; line-height: 1.3; }
+.vwdraft { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 12px 0 4px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--warn); background: var(--warn-soft); color: var(--ink); }
 .filesalert .sub { color: var(--ink); font-size: 0.9rem; margin-top: 4px; line-height: 1.45; }
 .filesalert .btn { background: var(--late); border-color: var(--late); color: #fff; flex: none; }
 .p-ok { background: var(--ok-soft); color: var(--ok); }
@@ -664,6 +665,11 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
           </div>
           <div class="qmenu" id="qmenu" hidden></div>
         </div>
+        <div class="vwdraft" id="vw-draft" hidden>
+          <p class="small" style="margin:0" id="vw-draft-note">This video isn't final yet. Use this draft for rehearsals.</p>
+          <button class="btn" type="button" id="vw-draft-dl">Download draft ↓</button>
+          <span class="muted small" id="vw-draft-prog"></span>
+        </div>
         <div class="composer" id="cm-add" hidden>
           <label for="cm-text" class="strong small" id="cm-label">Leave a comment</label>
           <textarea id="cm-text" maxlength="1000" placeholder="What should change at 0:00.0?"></textarea>
@@ -1108,6 +1114,7 @@ function asAdmin() { return realAdmin() && viewAs !== "contributor" && viewAs !=
 function isViewer() { return !writeAccess || (realAdmin() && viewAs === "viewer"); }
 // What view-only people (projection, lights…) are told when something isn't on the dashboard yet.
 const ASK_MAXINE = (what) => `The editor hasn't uploaded the ${what} yet. If you need it, ping Maxine.`;
+const playableCut = (v) => { const c = cutOf(v); return c && blobUrl(c.id) ? c : null; };   // old claude.ai drafts don't open on the web
 const hasAnyFinal = (v) => validUrl(v.finalLink) || (v.ratios || []).some((r) => r.status !== "requested" && validUrl(r.link));
 function videoTitle(v) {
   if (norm(v.title)) return v.category === "lyric" ? norm(v.title).toUpperCase() : norm(v.title);   // song titles always in capitals
@@ -1470,6 +1477,7 @@ function renderViewerHome() {
       ]),
       info("How to download", [
         ["Videos:", "click Open ↗. It opens in Google Drive, where you can download it."],
+        ["Drafts:", "if a video isn't final yet, open it and click Download draft ↓ to use it for rehearsals."],
         ["Screenshots:", "click one to open it full size, then save it."],
         ["Font file:", "click Download the font file ↓, next to the font name."],
       ]),
@@ -2292,6 +2300,18 @@ function renderPlayer() {
     $("cut-sum").hidden = false;
   } else $("cut-sum").hidden = true;
   $("cm-tc").hidden = !!c;
+  const vw = isViewer() && !!editing;
+  $("vw-draft").hidden = !(vw && c);
+  $("pc-save").hidden = vw;
+  if (vw && c) {
+    // View-only (lights & projection): the latest draft is for rehearsals until the final is in.
+    $("cut-label").textContent = "Latest draft · for rehearsals";
+    $("cut-ver").textContent = `V${c.v} · Draft`;
+    $("vw-draft-note").textContent = st(editing) === "Approved"
+      ? "This version is approved. The final file will show below once the editor uploads it. Until then, use this one."
+      : "This video isn't final yet. Use this draft for rehearsals. When a newer draft or the final is ready, it shows here.";
+    $("vw-draft-prog").textContent = c.size ? fmtMB(c.size) : "";
+  }
   sizeStage(); updateTime(); renderCutUpload();
 }
 function sizeStage() {
@@ -2362,6 +2382,24 @@ $("pc-save").onclick = async () => {
     const ext = /webm/.test(c.contentType || blob.type) ? "webm" : "mp4";
     await downloads.save({ filename: `${(c.name || "review copy").replace(/\.[^.]+$/, "")}.${ext}`, data: blob });
   } catch (e) { if (!e || e.code !== "declined") toast("Couldn't download the review copy."); }
+};
+$("vw-draft-dl").onclick = async () => {
+  const c = currentCut(); if (!c || !editing || !blobUrl(c.id)) return;
+  const b = $("vw-draft-dl"), prog = $("vw-draft-prog");
+  const name = `${videoTitle(editing)}${editing.event && editing.event !== "Regular Service" ? " " + editing.event : ""}${editing.year ? " " + editing.year : ""} DRAFT V${c.v}`.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
+  b.disabled = true; b.textContent = "Downloading…";
+  try {
+    const res = await fetch(blobUrl(c.id)); if (!res.ok) throw new Error(res.status);
+    const total = +res.headers.get("content-length") || c.size || 0, reader = res.body.getReader(), parts = []; let got = 0;
+    for (;;) { const { done, value } = await reader.read(); if (done) break; parts.push(value); got += value.length; if (total) prog.textContent = `${Math.round((got / total) * 100)}%`; }
+    const blob = new Blob(parts, { type: c.contentType || "video/mp4" });
+    await downloads.save({ filename: `${name}.${/webm/.test(blob.type) ? "webm" : "mp4"}`, data: blob });
+    prog.textContent = "Saved to your Downloads.";
+  } catch (e) {
+    // Fallback: open the file in a new tab, where it can be saved with right-click › Save video as.
+    window.open(blobUrl(c.id), "_blank", "noopener"); prog.textContent = "Opened in a new tab. Right-click the video › Save video as.";
+  }
+  b.disabled = false; b.textContent = "Download draft ↓";
 };
 dlg.addEventListener("keydown", (e) => {
   if (!currentCut() || /INPUT|TEXTAREA|SELECT|BUTTON/.test(e.target.tagName)) return;
@@ -2448,7 +2486,7 @@ function renderFeedback() {
   const hist = fb.filter((f) => f.kind !== "note");
   const canComment = canWrite && !!editing && s !== "Approved" && (admin || isMine(editing));
   const canResolve = canWrite && !!editing && (admin || isMine(editing));
-  $("cm-wrap").hidden = !editing;
+  $("cm-wrap").hidden = !editing || isViewer();
   $("cm-add").hidden = !canComment;
   $("cm-count").textContent = String(notes.length);
   $("cm-filter").replaceChildren(
@@ -2582,7 +2620,7 @@ function renderHeader() {
   if (showPick) fillSelect($("c-status"), [{ value: "Not started", label: "Not started" }, { value: "In progress", label: "In progress (editing)" }], s);
   if (isViewer()) {
     // View-only people only need to know if the video itself isn't there yet.
-    const vnote = hasAnyFinal(d) ? "" : ASK_MAXINE("final video");
+    const vnote = hasAnyFinal(d) ? "" : playableCut(d) ? "Not final yet: use the latest draft below for rehearsals." : ASK_MAXINE("final video");
     $("dlg-note").replaceChildren(vnote); $("dlg-note").hidden = !vnote; $("dlg-note").className = "dlg-note";
     return;
   }
@@ -3211,7 +3249,8 @@ function openDialog(m, v = null) {
   pendingCut = null; pendingSlides = []; cmFilter = "current"; draft = { pin: null, draw: [] }; markMode = ""; shownNote = null;
   stage.classList.remove("marking"); $("qmenu").hidden = true; $("cm-pin").setAttribute("aria-pressed", "false"); $("cm-draw").setAttribute("aria-pressed", "false"); $("cm-clear").hidden = true;
   archiveMode = false;
-  $("cut-wrap").hidden = !(m === "edit" || (m === "log" && !!assets && canEditDelivery)) || (m === "edit" && st(d) === "Approved" && !cutOf(d));
+  $("cut-wrap").hidden = !(m === "edit" || (m === "log" && !!assets && canEditDelivery)) || (m === "edit" && st(d) === "Approved" && !cutOf(d))
+    || (isViewer() && m === "edit" && (!playableCut(d) || (st(d) === "Approved" && hasAnyFinal(d))));
   $("bd-wrap").hidden = contributorEdit;
   $("bd-wrap").open = m !== "edit";
   $("bd-sum").textContent = m === "edit" ? [editorsText(d), d.dueDate ? "due " + fmtDate(d.dueDate) : "no due date"].join(" · ") : "";
