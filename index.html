@@ -1222,10 +1222,15 @@ function openPendingVideo() {
   const v = videos.find((x) => x.id === pendingVideo); pendingVideo = null;
   if (v) openDialog("edit", v); else toast("That video isn't in the dashboard any more.");
 }
+// While a video is open, the address bar shows its own link; closing it goes back to the page underneath.
+function setVideoAddress(id) {
+  const want = id ? `#video/${id}` : `#${currentView}`;
+  if (location.hash !== want) history.replaceState(null, "", want);
+}
 const videoLink = (v) => `${location.origin}${location.pathname}#video/${v.id}`;
 function route() {
   let h = location.hash.slice(1);
-  if (h.startsWith("video/")) { pendingVideo = h.slice(6); history.replaceState(null, "", "#home"); h = "home"; setTimeout(openPendingVideo, 0); }
+  if (h.startsWith("video/")) { if (!(dlg.open && editing && editing.id === h.slice(6))) { pendingVideo = h.slice(6); setTimeout(openPendingVideo, 0); } h = VIEWS.includes(currentView) ? currentView : "home"; }
   currentView = VIEWS.includes(h) ? h : "home";
   const catView = !!CAT_OF_VIEW[currentView];
   $("v-home").hidden = currentView !== "home";
@@ -2199,6 +2204,7 @@ $("brand-upload").addEventListener("change", async (e) => {
 
 /* ================= video dialog ================= */
 const dlg = $("dlg");
+dlg.addEventListener("close", () => setVideoAddress(null));
 let editing = null, mode = "edit", formEditors = [], bFiles = [], dFiles = [], deleteArmed = false;
 
 fillSelect($("f-cat"), CATS.map((c) => ({ value: c.id, label: c.label })), "lyric");
@@ -3351,6 +3357,7 @@ function openDialog(m, v = null) {
 
   renderEditorChips(); renderBFiles(); renderDFiles(); colourPreview(); syncCatFields();
   dlg.showModal();
+  setVideoAddress(m === "edit" && editing && editing.id ? editing.id : null);
   renderPlayer(); renderFeedback(); renderHeader(); lnSummary(); renderChecklist(); renderRatios();
   $("dlg-kicker").hidden = m !== "edit";   // new briefs and new videos just show the big title
   $("ln-wrap").hidden = m === "brief";
