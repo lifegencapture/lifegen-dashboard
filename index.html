@@ -1215,9 +1215,17 @@ syncThemeIcon();
 
 /* ================= routing ================= */
 const VIEWS = ["home", "lyrics", "recaps", "presentations", "openings", "overtures", "others", "team", "brand"];
-let currentView = "home";
+let currentView = "home", pendingVideo = null;
+// A link like lifegenvideo.my/#video/<id> opens that video straight away.
+function openPendingVideo() {
+  if (!pendingVideo || !videos.length) return;
+  const v = videos.find((x) => x.id === pendingVideo); pendingVideo = null;
+  if (v) openDialog("edit", v); else toast("That video isn't in the dashboard any more.");
+}
+const videoLink = (v) => `${location.origin}${location.pathname}#video/${v.id}`;
 function route() {
-  const h = location.hash.slice(1);
+  let h = location.hash.slice(1);
+  if (h.startsWith("video/")) { pendingVideo = h.slice(6); history.replaceState(null, "", "#home"); h = "home"; setTimeout(openPendingVideo, 0); }
   currentView = VIEWS.includes(h) ? h : "home";
   const catView = !!CAT_OF_VIEW[currentView];
   $("v-home").hidden = currentView !== "home";
@@ -2614,7 +2622,12 @@ function renderHeader() {
   const d = editing;
   if (!d) { $("dlg-pills").replaceChildren(); $("cstat-wrap").hidden = true; $("dlg-note").hidden = true; return; }
   const s = st(d), admin = asAdmin(), mine = isMine(d) || (!!d.createdBy && d.createdBy === uid);
-  $("dlg-pills").replaceChildren(...[statusPill(d), duePill(d)].filter(Boolean));
+  $("dlg-pills").replaceChildren(...[statusPill(d), duePill(d)].filter(Boolean),
+    ...(mode === "edit" && d.id ? [el("button", { class: "pc", type: "button", text: "Copy link", title: "Copy a link that opens this video", onclick: async (e) => {
+      const b = e.currentTarget, url = videoLink(d);
+      try { await navigator.clipboard.writeText(url); b.textContent = "Link copied ✓"; } catch { prompt("Copy this link:", url); }
+      setTimeout(() => (b.textContent = "Copy link"), 2000);
+    } })] : []));
   const showPick = canWrite && !admin && mine && (s === "Not started" || s === "In progress");
   $("cstat-wrap").hidden = !showPick;
   if (showPick) fillSelect($("c-status"), [{ value: "Not started", label: "Not started" }, { value: "In progress", label: "In progress (editing)" }], s);
@@ -3851,6 +3864,7 @@ async function checkFinalReminders() {
     if (editing) { const fresh = videos.find((v) => v.id === editing.id); if (fresh) { editing = fresh; if (dlg.open) { renderPlayer(); renderFeedback(); renderHeader(); renderSlides(); renderChecklist(); renderRatios(); } } }
     noteCompletions();
     render();
+    openPendingVideo();
   }, (e) => {
     clearTimeout(timer);
     notice(e.code === "revoked" ? "Your access to this page changed. Reload to continue." : "Lost connection to the video dashboard. Reload the page to reconnect.");
