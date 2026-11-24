@@ -732,7 +732,7 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
         <div class="filters" style="justify-content:space-between">
           <div class="label">Lyric look for ProPresenter</div><span class="muted small" id="pp-count"></span>
         </div>
-        <p class="hint" style="margin:0">Add a screenshot of how the lyrics sit on the video for each section, so our projectionist can match the look in ProPresenter. Label each one (verse, chorus, bridge…).</p>
+        <p class="hint" id="pp-hint" style="margin:0">Add a screenshot of how the lyrics sit on the video for each section, so our projectionist can match the look in ProPresenter. Label each one (verse, chorus, bridge…).</p>
         <div class="ppgrid" id="pp-grid"></div>
         <div class="inline" id="pp-add" style="flex-wrap:wrap">
           <label class="btn sm line" for="pp-file" style="cursor:pointer">Add screenshots</label>
@@ -833,7 +833,7 @@ label small, .lbl small { font-weight: 400; color: var(--muted); }
 
 
       <details class="ln" id="ln-wrap">
-      <summary><span>Hand-in details</span><span class="muted small" id="ln-sum"></span></summary>
+      <summary><span id="ln-title">Hand-in details</span><span class="muted small" id="ln-sum"></span></summary>
       <fieldset id="fs-delivery">
         <legend hidden>Final output</legend>
         <div class="grid2">
@@ -1105,6 +1105,9 @@ function realAdmin() { return isOwner || team().some((t) => key(t.name) === key(
 function asAdmin() { return realAdmin() && viewAs !== "contributor" && viewAs !== "viewer"; }
 // View-only people (projection, lights…) and admins previewing them with View as › Viewer.
 function isViewer() { return !writeAccess || (realAdmin() && viewAs === "viewer"); }
+// What view-only people (projection, lights…) are told when something isn't on the dashboard yet.
+const ASK_MAXINE = (what) => `The editor hasn't uploaded the ${what} yet. If you need it, ping Maxine.`;
+const hasAnyFinal = (v) => validUrl(v.finalLink) || (v.ratios || []).some((r) => r.status !== "requested" && validUrl(r.link));
 function videoTitle(v) {
   if (norm(v.title)) return v.category === "lyric" ? norm(v.title).toUpperCase() : norm(v.title);   // song titles always in capitals
   const bits = [v.event, NIGHT_CATS.includes(v.category) && isPC(v.event) && v.night !== "All nights" ? v.night : "", v.category === "recap" ? purposeLabel(v.purpose) || "Recap" : CAT[v.category]?.label].filter(Boolean);
@@ -1149,7 +1152,7 @@ function fileLinks(v) {
     if (more > 0 && !videoFolderUrl(v)) out.push(el("span", { class: "small muted", text: `+${more} version${more === 1 ? "" : "s"}` }));
   }
   if (videoFolderUrl(v) && (vers.length + (validUrl(v.finalLink) ? 1 : 0)) > 1) out.push(el("a", { class: "vlink", href: videoFolderUrl(v), target: "_blank", rel: "noopener noreferrer", text: `All ${vers.length + (validUrl(v.finalLink) && !vers.some((r) => /main screen/i.test(r.ratio || "")) ? 1 : 0)} versions ↗`, title: "The Drive folder with the main video and every screen version", onclick: (e) => e.stopPropagation() }));
-  if (validUrl(v.projectLink)) out.push(el("a", { class: "vlink", href: v.projectLink, target: "_blank", rel: "noopener noreferrer", text: "Project ↗", onclick: (e) => e.stopPropagation() }));
+  if (validUrl(v.projectLink) && !isViewer()) out.push(el("a", { class: "vlink", href: v.projectLink, target: "_blank", rel: "noopener noreferrer", text: "Project ↗", onclick: (e) => e.stopPropagation() }));
   return out.length ? el("div", { class: "links" }, out) : el("span", { class: "missing", text: "No files yet" });
 }
 
@@ -1680,7 +1683,7 @@ async function requestFiles(list) {
 }
 function renderChecklist() {
   const d = editing;
-  if (!d || st(d) !== "Approved" || (d.source === "sheet-import" && !d.filesRequested)) { $("ck-wrap").hidden = true; return; }
+  if (!d || isViewer() || st(d) !== "Approved" || (d.source === "sheet-import" && !d.filesRequested)) { $("ck-wrap").hidden = true; return; }
   const items = checklist(d), done = items.filter(([, ok]) => ok).length, all = done === items.length;
   const can = canWrite && (asAdmin() || isMine(d));
   $("ck-wrap").hidden = false;
@@ -1889,7 +1892,9 @@ function renderRatios() {
   const show = !!d && (d.category === "lyric" || NIGHT_CATS.includes(d.category));   // lyric, opening and overture videos can have screen versions
   $("rt-wrap").hidden = !show; if (!show) return;
   $("rt-edit").hidden = !(asAdmin() && canWrite);
-  const list = Array.isArray(d.ratios) ? d.ratios : [], admin = asAdmin(), mine = isMine(d);
+  const all = Array.isArray(d.ratios) ? d.ratios : [], admin = asAdmin(), mine = isMine(d), vw = isViewer();
+  // View-only people see the versions that exist, not the ones still requested from the editor.
+  const list = vw ? all.filter((r) => r.status !== "requested") : all;
   const canAdd = canWrite && (admin || mine);
   $("rt-count").textContent = list.length ? plural(list.length, "video") : "";
   // Openings and overtures already have their main video in the checklist: start the form on the next screen.
@@ -1908,7 +1913,7 @@ function renderRatios() {
   $("rt-list").replaceChildren(...[
     validUrl(d.finalLink) ? el("div", { class: "rtrow" }, [el("span", { class: "small strong", text: videoTitle(d) + " · main video" }), el("span", { class: "grow" }), el("span", { class: "rchip", text: "Main screen" }), el("a", { class: "vlink", href: d.finalLink, target: "_blank", rel: "noopener noreferrer", text: "Open ↗" })])
       : !lyric ? el("div", { class: "rtrow" }, [el("span", { class: "small strong", text: videoTitle(d) + " · main video" }), el("span", { class: "grow" }), el("span", { class: "rchip req", text: "Main screen" }),
-          canAdd && !(DRIVE.busy && DRIVE.busy.id === d.id) ? el("button", { class: "btn sm", type: "button", text: DRIVE.ready ? "Choose file" : "Upload to Drive", onclick: () => startDriveUpload(d) }) : el("span", { class: "small muted", text: "Not uploaded yet" })]) : null,
+          canAdd && !(DRIVE.busy && DRIVE.busy.id === d.id) ? el("button", { class: "btn sm", type: "button", text: DRIVE.ready ? "Choose file" : "Upload to Drive", onclick: () => startDriveUpload(d) }) : el("span", { class: "small muted", text: vw ? "Not uploaded yet. Ping Maxine if you need it." : "Not uploaded yet" })]) : null,
     ...versionOrder(list).map((i) => {
       const r = list[i];
       const req = r.status === "requested";
@@ -1934,7 +1939,7 @@ function renderRatios() {
         canAdd && admin ? el("button", { class: "btn quiet sm", type: "button", text: "Remove", onclick: () => { if (confirm(`Remove this final video of ${videoTitle(d)}?`)) saveRatios(list.filter((_, j) => j !== i)); } }) : null,
       ]);
     }),
-    !list.length && !validUrl(d.finalLink) && lyric ? el("p", { class: "hint", text: "No final videos yet." }) : null,
+    !list.length && !validUrl(d.finalLink) && lyric ? el("p", { class: "hint", text: vw ? ASK_MAXINE("final video") : "No final videos yet." }) : null,
   ].filter(Boolean));
 }
 function versionOrder(list) {
@@ -2527,6 +2532,7 @@ function renderSlides() {
   $("pp-wrap").hidden = !show; if (!show) return;
   const sl = slidesOf(), can = !!assets && canWrite && (canUploadCut() || asAdmin());
   $("pp-count").textContent = sl.length ? `${sl.length} screenshot${sl.length === 1 ? "" : "s"}` : "";
+  $("pp-hint").textContent = isViewer() ? "How the lyrics sit on the video, so you can match the look in ProPresenter. Click a screenshot to open it full size." : "Add a screenshot of how the lyrics sit on the video for each section, so our projectionist can match the look in ProPresenter. Label each one (verse, chorus, bridge…).";
   $("pp-add").hidden = !can; $("dup-wrap").hidden = !can;
   $("pp-grid").replaceChildren(...(sl.length ? sl.map((x, i) => el("div", { class: "ppcard" }, [
     el("a", { href: blobUrl(x.id), target: "_blank", rel: "noopener noreferrer", title: "Open full size" }, el("img", { src: blobUrl(x.id), alt: `${x.label || "Lyric"} screenshot`, loading: "lazy" })),
@@ -2535,7 +2541,7 @@ function renderSlides() {
           : el("span", { class: "strong small", text: x.label || "Section" }),
       can ? el("button", { class: "btn quiet sm", type: "button", text: "Remove", onclick: () => saveSlides(sl.filter((_, j) => j !== i), x.id) }) : null,
     ]),
-  ])) : [el("p", { class: "hint", text: can ? "No screenshots yet. Add one per section: verse, chorus, bridge…" : "No screenshots yet." })]));
+  ])) : [el("p", { class: "hint", text: can ? "No screenshots yet. Add one per section: verse, chorus, bridge…" : isViewer() ? ASK_MAXINE("ProPresenter screenshots") : "No screenshots yet." })]));
 }
 async function saveSlides(next, removedId) {
   $("pp-err").textContent = "";
@@ -2572,6 +2578,12 @@ function renderHeader() {
   const showPick = canWrite && !admin && mine && (s === "Not started" || s === "In progress");
   $("cstat-wrap").hidden = !showPick;
   if (showPick) fillSelect($("c-status"), [{ value: "Not started", label: "Not started" }, { value: "In progress", label: "In progress (editing)" }], s);
+  if (isViewer()) {
+    // View-only people only need to know if the video itself isn't there yet.
+    const vnote = hasAnyFinal(d) ? "" : ASK_MAXINE("final video");
+    $("dlg-note").replaceChildren(vnote); $("dlg-note").hidden = !vnote; $("dlg-note").className = "dlg-note";
+    return;
+  }
   const note = s === "Needs changes" ? "Changes needed: check the comments below, then upload your next version."
     : s === "In review" ? (admin ? "A new draft is waiting for your review below." : "Your draft is with the media heads. Their comments will show below.")
     : s === "Not started" && !admin && mine ? "Change the status to In progress when you start editing. Uploading a draft sends it for review."
@@ -2590,6 +2602,7 @@ $("c-status").addEventListener("change", async (e) => {
   catch { toast("Couldn't change the status. Try again."); renderHeader(); }
 });
 function lnSummary() {
+  if (isViewer() && mode === "edit") { $("ln-sum").textContent = ""; return; }
   const n = ["f-final", "f-project"].filter((id) => validUrl($(id).value.trim())).length;
   $("ln-sum").textContent = $("f-cat").value === "lyric" ? ($("f-nas").checked ? "Backed up to the server" : "Server backup, colours & font") : n ? `${n} link${n === 1 ? "" : "s"} added` : "Final link, backup & notes";
 }
@@ -3213,15 +3226,18 @@ function openDialog(m, v = null) {
   $("fs-who").hidden = contributorEdit;
   $("who-admin").hidden = !admin;
   $("fs-brief").hidden = !admin;
-  $("brief-view").hidden = !contributorEdit;
+  $("brief-view").hidden = !contributorEdit || isViewer();
   $("fs-delivery").hidden = !(canEditDelivery || m !== "edit");
   // Lyric videos: colours sit at the top for anyone just looking (lights, projection); their files are under Final videos.
   $("delivery-view").hidden = !$("fs-delivery").hidden || d.category === "lyric";
   { const showLook = m === "edit" && d.category === "lyric" && $("fs-delivery").hidden;
     $("look-top").hidden = !showLook;
     if (showLook) {
-      $("look-colours").replaceChildren(norm(d.colours) ? swatches(d.colours) : el("span", { class: "muted small", text: "Not added yet." }));
-      $("look-font").hidden = !(needsLook(d) && norm(d.font)); $("look-font").replaceChildren("Font: ", el("b", { text: d.font || "" }));
+      const vw = isViewer(), ff = (d.deliveryFiles || []).find(isFontFile);
+      $("look-colours").replaceChildren(norm(d.colours) ? swatches(d.colours) : el("span", { class: "muted small", text: vw ? ASK_MAXINE("colours") : "Not added yet." }));
+      $("look-font").hidden = !needsLook(d) || (!norm(d.font) && !vw && !ff);
+      $("look-font").replaceChildren(...(norm(d.font) ? ["Font: ", el("b", { text: d.font })] : vw ? [el("span", { class: "muted", text: ASK_MAXINE("font") })] : []),
+        ff ? el("a", { class: "vlink", href: blobUrl(ff.id), target: "_blank", rel: "noopener noreferrer", download: ff.name || "", text: " Download the font file ↓", style: "margin-left:8px" }) : "");
     } }
   $("bup-wrap").hidden = true;   // brief files removed; the reference link covers it
   $("bfiles-field").hidden = !(d.briefFiles || []).length;
@@ -3285,6 +3301,12 @@ function openDialog(m, v = null) {
   $("dlg-kicker").hidden = m !== "edit";   // new briefs and new videos just show the big title
   $("ln-wrap").hidden = m === "brief";
   $("ln-wrap").open = m !== "edit" || (m === "edit" && awaitingFiles(d) && isMine(d)) || (st(d) === "Approved" && !finalDone(d) && d.source !== "sheet-import");
+  $("ln-title").textContent = "Hand-in details";
+  if (isViewer() && m === "edit") {
+    // View-only: lyric videos, openings and overtures show their files under Final videos; others show the final video here.
+    $("ln-wrap").hidden = d.category === "lyric" || NIGHT_CATS.includes(d.category);
+    $("ln-wrap").open = true; $("ln-title").textContent = "Final video"; $("ln-sum").textContent = "";
+  }
   sizeStage(); requestAnimationFrame(sizeStage);
   if (m !== "edit") $("f-title").focus();
 }
