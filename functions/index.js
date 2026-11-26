@@ -54,7 +54,12 @@ exports.telegramAlert = onDocumentCreated(
     const sw = await db.doc("settings/telegram").get();
     if (!(sw.exists && sw.data().on === true)) { await snap.ref.update({ held: true }); return; }
 
-    const people = (n.to || []).map((name) => {
+    // Left out of Telegram for now (they still see everything in the dashboard bell).
+    // Remove a name here to include them again.
+    const TG_SKIP = ["maxine"];
+    const to = (n.to || []).filter((name) => !TG_SKIP.includes(key(name)));
+    if ((n.to || []).length && !to.length) { await snap.ref.update({ skipped: "only for people left out of Telegram" }); return; }
+    const people = to.map((name) => {
       const first = esc(String(name).trim());
       return tg[key(name)] ? `<b>${first}</b> (@${tg[key(name)]})` : `<b>${first}</b>`;
     });
